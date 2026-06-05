@@ -1,0 +1,23 @@
+{
+  "name": "cafeos-backend",
+  "version": "1.0.0",
+  "engines": { "node": "20.x" },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.44.0",
+    "axios": "^1.7.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.0",
+    "express": "^4.19.0",
+    "express-async-errors": "^3.1.0",
+    "morgan": "^1.10.0",
+    "node-cron": "^3.0.3",
+    "twilio": "^5.2.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js"
+  }
+}

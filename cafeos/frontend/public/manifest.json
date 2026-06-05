@@ -1,0 +1,9 @@
+{
+  "name": "CafeOS",
+  "short_name": "CafeOS",
+  "start_url": "/orders",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1a1a1a",
+  "icons": []
+}
