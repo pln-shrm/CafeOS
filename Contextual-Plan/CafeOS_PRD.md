@@ -3,7 +3,7 @@
 **Version:** 1.0  
 **Date:** June 2026  
 **Client:** Sam's Cafe, Vasco da Gama, Goa  
-**Authors:** Yashita Loya + [Co-developer]  
+**Authors:** Yashita Loya + Pulin Sharma  
 **Submission Context:** OkCredit Future Founders Finternship 2025  
 **Status:** Ready for development
 
