@@ -1,40 +1,161 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
-import StaffLogin from './pages/StaffLogin'
-import OwnerLogin from './pages/OwnerLogin'
-import StaffOrders from './pages/StaffOrders'
-import OwnerDashboard from './pages/OwnerDashboard'
-import NotFound from './pages/NotFound'
+import { useAuth } from './hooks/useAuth'
+import Layout from './components/Layout'
 
-function RequireStaffAuth({ children }) {
-  const session = localStorage.getItem('staffSession')
-  return session ? children : <Navigate to="/login" replace />
-}
+import LoginPage from './pages/LoginPage'
+import StaffHome from './pages/StaffHome'
+import OrderBuilder from './pages/OrderBuilder'
+import BillPreview from './pages/BillPreview'
+import EBill from './pages/EBill'
+import OwnerHome from './pages/OwnerHome'
+import MenuManagement from './pages/owner/MenuManagement'
+import MenuItemForm from './pages/owner/MenuItemForm'
+import StaffManagement from './pages/owner/StaffManagement'
+import StaffForm from './pages/owner/StaffForm'
+import Reports from './pages/owner/Reports'
+import AttendanceLog from './pages/owner/AttendanceLog'
+import Inventory from './pages/owner/Inventory'
+import VendorCredit from './pages/owner/VendorCredit'
 
-function RequireOwnerAuth({ children }) {
-  const session = localStorage.getItem('ownerSession')
-  return session ? children : <Navigate to="/owner/login" replace />
+function ProtectedRoute({ children, requireOwner = false }) {
+  const { isAuthenticated, isStaff, isOwner } = useAuth()
+
+  if (!isAuthenticated) return <Navigate to="/login" replace />
+  if (requireOwner && !isOwner) return <Navigate to="/staff/home" replace />
+  // Staff trying to reach /owner/* is handled by requireOwner above
+
+  return <Layout>{children}</Layout>
 }
 
 const router = createBrowserRouter([
-  { path: '/login', element: <StaffLogin /> },
-  { path: '/owner/login', element: <OwnerLogin /> },
   {
-    path: '/orders',
+    path: '/login',
+    element: <LoginPage />
+  },
+  {
+    path: '/staff/home',
     element: (
-      <RequireStaffAuth>
-        <StaffOrders />
-      </RequireStaffAuth>
+      <ProtectedRoute>
+        <StaffHome />
+      </ProtectedRoute>
     )
   },
   {
-    path: '/owner',
+    path: '/staff/order/new',
     element: (
-      <RequireOwnerAuth>
-        <OwnerDashboard />
-      </RequireOwnerAuth>
+      <ProtectedRoute>
+        <OrderBuilder />
+      </ProtectedRoute>
     )
   },
-  { path: '*', element: <NotFound /> }
+  {
+    path: '/staff/order/new/bill',
+    element: (
+      <ProtectedRoute>
+        <BillPreview />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/staff/order/:id/ebill',
+    element: (
+      <ProtectedRoute>
+        <EBill />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/owner/home',
+    element: (
+      <ProtectedRoute requireOwner>
+        <OwnerHome />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/owner/menu',
+    element: (
+      <ProtectedRoute requireOwner>
+        <MenuManagement />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/owner/menu/new',
+    element: (
+      <ProtectedRoute requireOwner>
+        <MenuItemForm />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/owner/menu/:id/edit',
+    element: (
+      <ProtectedRoute requireOwner>
+        <MenuItemForm />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/owner/staff',
+    element: (
+      <ProtectedRoute requireOwner>
+        <StaffManagement />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/owner/staff/new',
+    element: (
+      <ProtectedRoute requireOwner>
+        <StaffForm />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/owner/staff/:id/edit',
+    element: (
+      <ProtectedRoute requireOwner>
+        <StaffForm />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/owner/reports',
+    element: (
+      <ProtectedRoute requireOwner>
+        <Reports />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/owner/attendance',
+    element: (
+      <ProtectedRoute requireOwner>
+        <AttendanceLog />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/owner/inventory',
+    element: (
+      <ProtectedRoute requireOwner>
+        <Inventory />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/owner/credit',
+    element: (
+      <ProtectedRoute requireOwner>
+        <VendorCredit />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '*',
+    element: <Navigate to="/login" replace />
+  }
 ])
 
 export default router

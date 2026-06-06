@@ -1,17 +1,23 @@
 {
   "name": "cafeos-backend",
   "version": "1.0.0",
-  "engines": { "node": "20.x" },
+  "engines": {
+    "node": "20.x"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.44.0",
     "axios": "^1.7.0",
+    "bcrypt": "^5.1.1",
     "cors": "^2.8.5",
+    "date-fns-tz": "^3.2.0",
     "dotenv": "^16.4.0",
     "express": "^4.19.0",
     "express-async-errors": "^3.1.0",
+    "jsonwebtoken": "^9.0.3",
     "morgan": "^1.10.0",
     "node-cron": "^3.0.3",
-    "twilio": "^5.2.0"
+    "twilio": "^5.2.0",
+    "uuid": "^10.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"
