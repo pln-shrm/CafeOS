@@ -2,7 +2,7 @@ const { Router } = require('express')
 const supabase = require('../services/supabaseClient')
 const { ownerAuthMiddleware } = require('../middleware/auth')
 const { ok, fail } = require('../utils/response')
-const { confirmPredictions } = require('../intelligence/predictions')
+const { confirmPredictions, generatePredictions } = require('../intelligence/predictions')
 const { formatInTimeZone } = require('date-fns-tz')
 
 const router = Router()
@@ -79,6 +79,37 @@ router.post('/confirm', ownerAuthMiddleware, async (req, res) => {
   await confirmPredictions(date)
 
   return ok(res, { date, confirmed: true })
+})
+
+// POST /api/predictions/generate
+// Triggers prediction generation for a given date (defaults to tomorrow)
+router.post('/generate', ownerAuthMiddleware, async (req, res) => {
+  let targetDate = req.body?.date
+
+  if (!targetDate) {
+    // Default to tomorrow IST
+    const tomorrow = new Date()
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    targetDate = formatInTimeZone(tomorrow, IST, 'yyyy-MM-dd')
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
+    return fail(res, 'VALIDATION_ERROR', 'date must be in YYYY-MM-DD format', 400)
+  }
+
+  try {
+    const result = await generatePredictions(targetDate)
+    return ok(res, {
+      date: targetDate,
+      generated: result.rows?.length || 0,
+      predictions: result.rows || [],
+      weather: result.weather,
+      festivalName: result.festivalName
+    })
+  } catch (err) {
+    console.error('[API predictions/generate] Failed:', err)
+    return fail(res, 'GENERATION_FAILED', err.message, 500)
+  }
 })
 
 module.exports = router

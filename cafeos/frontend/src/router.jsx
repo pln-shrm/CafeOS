@@ -18,11 +18,18 @@ import Inventory from './pages/owner/Inventory'
 import VendorCredit from './pages/owner/VendorCredit'
 
 function ProtectedRoute({ children, requireOwner = false }) {
-  const { isAuthenticated, isStaff, isOwner } = useAuth()
+  const { isAuthenticated, isStaff, isOwner, loading } = useAuth()
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <p className="text-gray-400 text-sm">Loading session…</p>
+      </div>
+    )
+  }
 
   if (!isAuthenticated) return <Navigate to="/login" replace />
   if (requireOwner && !isOwner) return <Navigate to="/staff/home" replace />
-  // Staff trying to reach /owner/* is handled by requireOwner above
 
   return <Layout>{children}</Layout>
 }

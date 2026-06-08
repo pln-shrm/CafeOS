@@ -16,6 +16,7 @@ const billingRouter = require('./routes/billing')
 const predictionsRouter = require('./routes/predictions')
 const attendanceRouter = require('./routes/attendance')
 const sheetsRouter = require('./routes/sheets')
+const creditRouter = require('./routes/credit')
 const webhookRouter = require('./bot/webhook')
 const { runMorningPrepJob } = require('./jobs/cron')
 
@@ -43,6 +44,7 @@ app.use('/api/billing', billingRouter)
 app.use('/api/predictions', predictionsRouter)
 app.use('/api/attendance', attendanceRouter)
 app.use('/api/sheets', sheetsRouter)
+app.use('/api/credit', creditRouter)
 app.use('/webhook/whatsapp', webhookRouter)
 
 if (process.env.NODE_ENV !== 'production') {

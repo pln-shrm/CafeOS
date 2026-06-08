@@ -16,7 +16,10 @@ function clearStaffStorage() {
 }
 
 export function useAuth() {
-  const [state, setState] = useState(() => computeState())
+  const [state, setState] = useState(() => ({
+    ...computeState(),
+    loading: true
+  }))
 
   function computeState() {
     const token = localStorage.getItem(STAFF_TOKEN_KEY)
@@ -43,37 +46,63 @@ export function useAuth() {
 
   // Check for Supabase owner session on mount and auth changes
   useEffect(() => {
+    let active = true
+
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        setState(prev => ({
-          ...prev,
-          isOwner: true,
-          isAuthenticated: true,
-          user: { id: session.user.id, name: session.user.email, role: 'owner' }
-        }))
+      if (active) {
+        if (session?.user) {
+          setState(prev => ({
+            ...prev,
+            isOwner: true,
+            isStaff: false,
+            isAuthenticated: true,
+            user: { id: session.user.id, name: session.user.email, role: 'owner' },
+            loading: false
+          }))
+        } else {
+          setState(prev => ({
+            ...prev,
+            loading: false
+          }))
+        }
       }
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        setState(prev => ({
-          ...prev,
-          isOwner: true,
-          isAuthenticated: true,
-          user: { id: session.user.id, name: session.user.email, role: 'owner' }
-        }))
-      } else if (!localStorage.getItem(STAFF_TOKEN_KEY)) {
-        setState({ isStaff: false, isOwner: false, isAuthenticated: false, user: null })
+      if (active) {
+        if (session?.user) {
+          setState({
+            isStaff: false,
+            isOwner: true,
+            isAuthenticated: true,
+            user: { id: session.user.id, name: session.user.email, role: 'owner' },
+            loading: false
+          })
+        } else {
+          // If no owner session, and no staff session either, clear state
+          if (!localStorage.getItem(STAFF_TOKEN_KEY)) {
+            setState({ isStaff: false, isOwner: false, isAuthenticated: false, user: null, loading: false })
+          } else {
+            setState(prev => ({
+              ...prev,
+              isOwner: false,
+              loading: false
+            }))
+          }
+        }
       }
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      active = false
+      subscription.unsubscribe()
+    }
   }, [])
 
   const logout = useCallback(async () => {
     clearStaffStorage()
     await supabase.auth.signOut()
-    setState({ isStaff: false, isOwner: false, isAuthenticated: false, user: null })
+    setState({ isStaff: false, isOwner: false, isAuthenticated: false, user: null, loading: false })
   }, [])
 
   return { ...state, logout }
