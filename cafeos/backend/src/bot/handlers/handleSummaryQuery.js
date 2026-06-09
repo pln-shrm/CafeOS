@@ -1,5 +1,5 @@
 const supabase = require('../../services/supabaseClient')
-const { formatRupees, todayIST, twilioReply } = require('./helpers')
+const { formatRupees, todayIST, whatsappReply } = require('./helpers')
 
 async function handleSummaryQuery(phoneNumber) {
   const today = todayIST()
@@ -12,7 +12,7 @@ async function handleSummaryQuery(phoneNumber) {
   if (error) throw error
 
   if (!orders || orders.length === 0) {
-    await twilioReply(phoneNumber, 'No orders logged yet today.')
+    await whatsappReply(phoneNumber, 'No orders logged yet today.')
     return
   }
 
@@ -29,7 +29,7 @@ async function handleSummaryQuery(phoneNumber) {
     if (order.payment_method === 'pending') pending += amount
   }
 
-  await twilioReply(
+  await whatsappReply(
     phoneNumber,
     `Today's summary:\nOrders: ${orders.length}\nRevenue: ${formatRupees(total)}\nCash: ${formatRupees(cash)} | UPI: ${formatRupees(upi)} | Pending: ${formatRupees(pending)}`
   )

@@ -1,10 +1,10 @@
 const supabase = require('../../services/supabaseClient')
-const { formatRupees, twilioReply } = require('./helpers')
+const { formatRupees, whatsappReply } = require('./helpers')
 
 async function handleBalanceQuery(phoneNumber, message) {
   const match = message.match(/(?:owe|balance)\s+(.+)/i)
   if (!match) {
-    await twilioReply(phoneNumber, "Try: 'owe Rice Vendor' or 'balance Meat Vendor'")
+    await whatsappReply(phoneNumber, "Try: 'owe Rice Vendor' or 'balance Meat Vendor'")
     return
   }
 
@@ -18,7 +18,7 @@ async function handleBalanceQuery(phoneNumber, message) {
   if (error) throw error
 
   if (!data || data.length === 0) {
-    await twilioReply(phoneNumber, `No credit entries found for ${vendorName}.`)
+    await whatsappReply(phoneNumber, `No credit entries found for ${vendorName}.`)
     return
   }
 
@@ -32,7 +32,7 @@ async function handleBalanceQuery(phoneNumber, message) {
     ? `Balance due: ${formatRupees(balance)}`
     : `Balance in your favor: ${formatRupees(Math.abs(balance))}`
 
-  await twilioReply(phoneNumber, `${vendorName} — ${balanceText}`)
+  await whatsappReply(phoneNumber, `${vendorName} — ${balanceText}`)
 }
 
 module.exports = handleBalanceQuery

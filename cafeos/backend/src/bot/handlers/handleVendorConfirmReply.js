@@ -1,6 +1,6 @@
 const supabase = require('../../services/supabaseClient')
 const { callClaude } = require('../../services/claudeService')
-const { setBotState, twilioReply } = require('./helpers')
+const { setBotState, whatsappReply } = require('./helpers')
 
 const SYSTEM_PROMPT_F = `You are CafeOS, generating a WhatsApp vendor order message on behalf of Sam's Cafe in Goa.
 The message must sound like Sam wrote it herself — natural, conversational, direct.
@@ -53,7 +53,7 @@ async function handleVendorConfirmReply(phoneNumber, message, context) {
     await setBotState(phoneNumber, 'idle', null)
 
     const vendorLine = vendorName ? ` to ${vendorName}` : ''
-    await twilioReply(
+    await whatsappReply(
       phoneNumber,
       `Order confirmed ✓\n\nForward this${vendorLine}:\n\n"${formattedMessage}"`
     )
@@ -62,11 +62,11 @@ async function handleVendorConfirmReply(phoneNumber, message, context) {
 
   if (text === '2') {
     await setBotState(phoneNumber, 'awaiting_vendor_edit', context || null)
-    await twilioReply(phoneNumber, "What changes? (e.g. 'rice 6kg, skip oil')")
+    await whatsappReply(phoneNumber, "What changes? (e.g. 'rice 6kg, skip oil')")
     return
   }
 
-  await twilioReply(phoneNumber, 'Reply 1 to confirm or 2 to edit.')
+  await whatsappReply(phoneNumber, 'Reply 1 to confirm or 2 to edit.')
 }
 
 module.exports = handleVendorConfirmReply

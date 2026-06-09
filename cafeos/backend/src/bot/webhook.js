@@ -1,5 +1,5 @@
 const { Router } = require('express')
-const twilio = require('twilio')
+
 const supabase = require('../services/supabaseClient')
 const {
   getBotState,
@@ -23,10 +23,6 @@ const handleFallback = require('./handlers/handleFallback')
 
 const router = Router()
 
-function buildRequestUrl(req) {
-  const proto = req.headers['x-forwarded-proto'] || req.protocol
-  return `${proto}://${req.get('host')}${req.originalUrl}`
-}
 
 async function routeMessage({ phoneNumber, message, isVoiceNote, mediaUrl }) {
   const trimmed = message.trim()
@@ -108,63 +104,86 @@ async function routeMessage({ phoneNumber, message, isVoiceNote, mediaUrl }) {
   await handleFallback(phoneNumber)
 }
 
+router.get('/', (req, res) => {
+  const mode = req.query['hub.mode']
+  const token = req.query['hub.verify_token']
+  const challenge = req.query['hub.challenge']
+
+  if (mode && token) {
+    if (mode === 'subscribe' && token === process.env.META_VERIFY_TOKEN) {
+      console.log('[Webhook] WEBHOOK_VERIFIED')
+      return res.status(200).send(challenge)
+    } else {
+      return res.sendStatus(403)
+    }
+  } else {
+    return res.sendStatus(400)
+  }
+})
+
 router.post('/', async (req, res) => {
-  const signature = req.headers['x-twilio-signature']
-  const url = buildRequestUrl(req)
+  const body = req.body
+  console.log('\n--- Incoming Webhook ---')
+  console.log(JSON.stringify(body, null, 2))
 
-  const valid = twilio.validateRequest(
-    process.env.TWILIO_AUTH_TOKEN,
-    signature,
-    url,
-    req.body
-  )
 
-  if (!valid) {
-    return res.status(403).send('Forbidden')
+  if (!body.object) {
+    return res.sendStatus(404)
   }
 
-  const { MessageSid, From, Body, NumMedia, MediaContentType0, MediaUrl0 } = req.body
+  if (
+    body.entry &&
+    body.entry[0].changes &&
+    body.entry[0].changes[0] &&
+    body.entry[0].changes[0].value.messages &&
+    body.entry[0].changes[0].value.messages[0]
+  ) {
+    const messageInfo = body.entry[0].changes[0].value.messages[0]
+    const MessageSid = messageInfo.id
+    const From = messageInfo.from
+    const Body = messageInfo.text?.body || ''
 
-  const { data: existing, error: dedupeErr } = await supabase
-    .from('processed_webhooks')
-    .select('message_sid')
-    .eq('message_sid', MessageSid)
-    .maybeSingle()
+    const { data: existing, error: dedupeErr } = await supabase
+      .from('processed_webhooks')
+      .select('message_sid')
+      .eq('message_sid', MessageSid)
+      .maybeSingle()
 
-  if (dedupeErr) {
-    console.error('[Webhook] Dedup check failed', dedupeErr)
-  }
+    if (dedupeErr) {
+      console.error('[Webhook] Dedup check failed', dedupeErr)
+    }
 
-  if (existing) {
-    return res.status(200).send('<Response></Response>')
-  }
+    if (existing) {
+      return res.status(200).send('OK')
+    }
 
-  const { error: insertErr } = await supabase
-    .from('processed_webhooks')
-    .insert({ message_sid: MessageSid })
+    const { error: insertErr } = await supabase
+      .from('processed_webhooks')
+      .insert({ message_sid: MessageSid })
 
-  if (insertErr) {
-    console.error('[Webhook] Dedup insert failed', insertErr)
-  }
+    if (insertErr) {
+      console.error('[Webhook] Dedup insert failed', insertErr)
+    }
 
-  if (From !== process.env.SAM_WHATSAPP_TO) {
-    return res.status(200).send('<Response></Response>')
-  }
+    if (From !== process.env.SAM_WHATSAPP_TO) {
+      return res.status(200).send('OK')
+    }
 
-  res.status(200).send('<Response></Response>')
+    res.status(200).send('OK')
 
-  const isVoiceNote = Number(NumMedia) === 1 && MediaContentType0?.startsWith('audio/')
-
-  setImmediate(() => {
-    routeMessage({
-      phoneNumber: From,
-      message: Body || '',
-      isVoiceNote,
-      mediaUrl: isVoiceNote ? (MediaUrl0 || null) : null
-    }).catch(err => {
-      console.error('[Webhook] Async processing failed', err)
+    setImmediate(() => {
+      routeMessage({
+        phoneNumber: From,
+        message: Body,
+        isVoiceNote: false,
+        mediaUrl: null
+      }).catch(err => {
+        console.error('[Webhook] Async processing failed', err)
+      })
     })
-  })
+  } else {
+    res.sendStatus(200)
+  }
 })
 
 module.exports = router

@@ -1,5 +1,5 @@
 const supabase = require('../../services/supabaseClient')
-const { setBotState, todayIST, twilioReply } = require('./helpers')
+const { setBotState, todayIST, whatsappReply } = require('./helpers')
 const { applyPrepEdits } = require('./handlePrepEditReply')
 
 async function handlePrepConfirmReply(phoneNumber, message) {
@@ -13,13 +13,13 @@ async function handlePrepConfirmReply(phoneNumber, message) {
       .eq('date', today)
 
     await setBotState(phoneNumber, 'idle', null)
-    await twilioReply(phoneNumber, "Got it! Today's prep locked in ✓")
+    await whatsappReply(phoneNumber, "Got it! Today's prep locked in ✓")
     return
   }
 
   if (text === '2') {
     await setBotState(phoneNumber, 'awaiting_prep_edit', null)
-    await twilioReply(phoneNumber, "What would you like to change? (e.g. 'biryani 25, fish curry 10')")
+    await whatsappReply(phoneNumber, "What would you like to change? (e.g. 'biryani 25, fish curry 10')")
     return
   }
 

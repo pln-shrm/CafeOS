@@ -1,4 +1,4 @@
-const { parseVendorItems, setBotState, twilioReply } = require('./helpers')
+const { parseVendorItems, setBotState, whatsappReply } = require('./helpers')
 
 function extractVendorName(message) {
   const arrowSplit = message.split('→')
@@ -19,13 +19,13 @@ async function handleVendorOrderCommand(phoneNumber, message) {
   const items = parseVendorItems(itemText)
 
   if (items.length === 0) {
-    await twilioReply(phoneNumber, 'Please include items like: order rice 5kg, dal 3kg → Rice Vendor')
+    await whatsappReply(phoneNumber, 'Please include items like: order rice 5kg, dal 3kg → Rice Vendor')
     return
   }
 
   if (!vendorName) {
     await setBotState(phoneNumber, 'awaiting_vendor_name', { items })
-    await twilioReply(phoneNumber, 'Got the items ✓ Who should this go to? (Reply with vendor name)')
+    await whatsappReply(phoneNumber, 'Got the items ✓ Who should this go to? (Reply with vendor name)')
     return
   }
 
@@ -36,7 +36,7 @@ async function handleVendorOrderCommand(phoneNumber, message) {
     formatted_message: formattedMessage
   })
 
-  await twilioReply(
+  await whatsappReply(
     phoneNumber,
     `Logged ✓\n\nReady to send to ${vendorName}:\n\n"${formattedMessage}"\n\nForward this to place the order.\nReply 2 to edit.`
   )

@@ -1,4 +1,4 @@
-const { setBotState, twilioReply } = require('./helpers')
+const { setBotState, whatsappReply } = require('./helpers')
 
 function buildVendorMessage(items) {
   const list = items.map(item => `${item.name} ${item.qty}${item.unit || ''}`)
@@ -16,7 +16,7 @@ async function handleVendorNameReply(phoneNumber, message, context) {
     formatted_message: formattedMessage
   })
 
-  await twilioReply(
+  await whatsappReply(
     phoneNumber,
     `Logged ✓\n\nReady to send to ${vendorName}:\n\n"${formattedMessage}"\n\nForward this to place the order.\nReply 2 to edit.`
   )

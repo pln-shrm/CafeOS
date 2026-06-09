@@ -1,5 +1,5 @@
 const supabase = require('../../services/supabaseClient')
-const { twilioReply, setBotState } = require('./helpers')
+const { whatsappReply, setBotState } = require('./helpers')
 
 const WELCOME_MESSAGE = [
   "Hi Sam! 👋 Welcome to CafeOS — your cafe assistant.",
@@ -35,10 +35,10 @@ async function handleOnboarding(phoneNumber) {
       message = `${message}\n\nMenu and vendor list look ready ✅`
     }
 
-    await twilioReply(phoneNumber, message)
+    await whatsappReply(phoneNumber, message)
   } catch (err) {
     console.error('[Bot] Onboarding failed', err)
-    await twilioReply(phoneNumber, 'Hi Sam! Something went wrong getting started. Please message again in a minute.')
+    await whatsappReply(phoneNumber, 'Hi Sam! Something went wrong getting started. Please message again in a minute.')
   }
 }
 

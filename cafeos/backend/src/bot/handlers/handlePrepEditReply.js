@@ -1,6 +1,6 @@
 const supabase = require('../../services/supabaseClient')
 const { callClaudeJSON } = require('../../services/claudeService')
-const { setBotState, todayIST, twilioReply, fuzzyMatchMenuItem } = require('./helpers')
+const { setBotState, todayIST, whatsappReply, fuzzyMatchMenuItem } = require('./helpers')
 
 const SYSTEM_PROMPT_D = `You are an assistant for a small cafe in Goa, India.
 Sam has replied to her morning prep sheet with changes.
@@ -48,7 +48,7 @@ Sam's edit message: "${editMessage}"`
   const parsed = await callClaudeJSON(SYSTEM_PROMPT_D, userMessage, 400)
 
   if (parsed === null || parsed.unclear) {
-    await twilioReply(
+    await whatsappReply(
       phoneNumber,
       "Sorry Sam, I didn't catch that clearly. Can you say it like:\n\"biryani 25, fish curry 10\"?"
     )
@@ -58,7 +58,7 @@ Sam's edit message: "${editMessage}"`
   if (parsed.overrides.length === 0) {
     await supabase.from('predictions').update({ confirmed: true }).eq('date', today)
     await setBotState(phoneNumber, 'idle', null)
-    await twilioReply(phoneNumber, "Got it! Today's prep locked in ✓")
+    await whatsappReply(phoneNumber, "Got it! Today's prep locked in ✓")
     return
   }
 
@@ -79,9 +79,9 @@ Sam's edit message: "${editMessage}"`
   await setBotState(phoneNumber, 'idle', null)
 
   if (changedLines.length > 0) {
-    await twilioReply(phoneNumber, `Updated ✓\n${changedLines.join('\n')}\n\nAll other items unchanged.`)
+    await whatsappReply(phoneNumber, `Updated ✓\n${changedLines.join('\n')}\n\nAll other items unchanged.`)
   } else {
-    await twilioReply(phoneNumber, "Got it! I've noted your changes ✓")
+    await whatsappReply(phoneNumber, "Got it! I've noted your changes ✓")
   }
 }
 

@@ -1,5 +1,5 @@
 const supabase = require('../../services/supabaseClient')
-const { formatRupees, twilioReply } = require('./helpers')
+const { formatRupees, whatsappReply } = require('./helpers')
 
 async function getBalance(vendorName) {
   const { data, error } = await supabase
@@ -36,7 +36,7 @@ async function handleCreditCommand(phoneNumber, message) {
   }
 
   if (!vendorName || !amount) {
-    await twilioReply(phoneNumber, "Try: 'credit Rice Vendor ₹4500' or 'paid Meat Vendor ₹2400'")
+    await whatsappReply(phoneNumber, "Try: 'credit Rice Vendor ₹4500' or 'paid Meat Vendor ₹2400'")
     return
   }
 
@@ -53,7 +53,7 @@ async function handleCreditCommand(phoneNumber, message) {
     ? `Balance due: ${formatRupees(balance)}`
     : `Balance in your favor: ${formatRupees(Math.abs(balance))}`
 
-  await twilioReply(phoneNumber, `${vendorName} logged. ${balanceText}`)
+  await whatsappReply(phoneNumber, `${vendorName} logged. ${balanceText}`)
 }
 
 module.exports = handleCreditCommand

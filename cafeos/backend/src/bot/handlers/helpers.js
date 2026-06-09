@@ -1,6 +1,6 @@
 const { formatInTimeZone } = require('date-fns-tz')
 const supabase = require('../../services/supabaseClient')
-const { twilioReply } = require('../../services/twilioClient')
+const { whatsappReply } = require('../../services/whatsappClient')
 
 const IST = 'Asia/Kolkata'
 
@@ -102,7 +102,7 @@ function fuzzyMatchMenuItem(searchName, menuItems) {
 }
 
 module.exports = {
-  twilioReply,
+  whatsappReply,
   todayIST,
   formatRupees,
   getBotState,

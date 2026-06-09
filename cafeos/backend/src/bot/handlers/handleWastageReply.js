@@ -1,6 +1,6 @@
 const supabase = require('../../services/supabaseClient')
 const { callClaudeJSON, callClaude } = require('../../services/claudeService')
-const { setBotState, todayIST, twilioReply, fuzzyMatchMenuItem } = require('./helpers')
+const { setBotState, todayIST, whatsappReply, fuzzyMatchMenuItem } = require('./helpers')
 const { generatePredictions } = require('../../intelligence/predictions')
 const { formatInTimeZone } = require('date-fns-tz')
 
@@ -119,7 +119,7 @@ Sam's wastage message: "${message}"`
   const parsed = await callClaudeJSON(SYSTEM_PROMPT_G, userMessage, 400)
 
   if (parsed === null || parsed.unclear) {
-    await twilioReply(
+    await whatsappReply(
       phoneNumber,
       "Sorry Sam, I didn't catch that. Try:\n\"biryani 3 left, fish curry zero, chai all sold\""
     )
@@ -163,7 +163,7 @@ Sam's wastage message: "${message}"`
   } catch (err) {
     console.error('[WastageReply] Failed to generate tomorrow predictions:', err)
     await setBotState(phoneNumber, 'idle', null)
-    await twilioReply(phoneNumber, 'Wastage logged ✓ Thanks Sam!')
+    await whatsappReply(phoneNumber, 'Wastage logged ✓ Thanks Sam!')
     return
   }
 
@@ -171,7 +171,7 @@ Sam's wastage message: "${message}"`
   const orderItems = await buildVendorOrderFromPredictions(tomorrowPredictions, menuItems)
   if (orderItems.length === 0) {
     await setBotState(phoneNumber, 'idle', null)
-    await twilioReply(phoneNumber, 'Wastage logged ✓ No items predicted for tomorrow.')
+    await whatsappReply(phoneNumber, 'Wastage logged ✓ No items predicted for tomorrow.')
     return
   }
 
@@ -186,7 +186,7 @@ Sam's wastage message: "${message}"`
     source: 'wastage_flow'
   })
 
-  await twilioReply(
+  await whatsappReply(
     phoneNumber,
     `Wastage logged ✓\n\nHere's tomorrow's order${vendorLine}:\n\n"${formattedMessage}"\n\nReply 1 to confirm or 2 to edit.`
   )

@@ -1,5 +1,5 @@
 const supabase = require('../../services/supabaseClient')
-const { todayIST, twilioReply } = require('./helpers')
+const { todayIST, whatsappReply } = require('./helpers')
 
 async function handleStockQuery(phoneNumber) {
   const today = todayIST()
@@ -12,7 +12,7 @@ async function handleStockQuery(phoneNumber) {
   if (predErr) throw predErr
 
   if (!predictions || predictions.length === 0) {
-    await twilioReply(phoneNumber, 'No prep predictions found for today.')
+    await whatsappReply(phoneNumber, 'No prep predictions found for today.')
     return
   }
 
@@ -39,7 +39,7 @@ async function handleStockQuery(phoneNumber) {
     return `${name}: ${remaining} left (planned ${planned})`
   })
 
-  await twilioReply(phoneNumber, `Stock status (est.):\n${lines.join('\n')}`)
+  await whatsappReply(phoneNumber, `Stock status (est.):\n${lines.join('\n')}`)
 }
 
 module.exports = handleStockQuery

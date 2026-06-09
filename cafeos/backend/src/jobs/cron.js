@@ -1,7 +1,7 @@
 const cron = require('node-cron')
 const axios = require('axios')
 const supabase = require('../services/supabaseClient')
-const { twilioReply } = require('../services/twilioClient')
+const { whatsappReply } = require('../services/whatsappClient')
 const { callClaude } = require('../services/claudeService')
 const { setBotState, todayIST } = require('../bot/handlers/helpers')
 const { generatePredictions } = require('../intelligence/predictions')
@@ -153,7 +153,7 @@ Date: ${formattedDate}`
   // Enforce character limit
   if (messageText.length > 1500) messageText = messageText.slice(0, 1480) + '...'
 
-  await twilioReply(process.env.SAM_WHATSAPP_TO, messageText)
+  await whatsappReply(process.env.SAM_WHATSAPP_TO, messageText)
   await setBotState(process.env.SAM_WHATSAPP_TO, 'awaiting_prep_confirm', {
     date: today,
     predictions: contextPredictions
@@ -168,7 +168,7 @@ async function runPrepFollowupJob() {
     .maybeSingle()
 
   if (state.data?.current_state === 'awaiting_prep_confirm') {
-    await twilioReply(
+    await whatsappReply(
       process.env.SAM_WHATSAPP_TO,
       "Hi Sam! Just checking — did you see today's prep sheet?\nReply 1 to confirm or tell me your changes."
     )
@@ -190,7 +190,7 @@ async function runPrepAutoConfirmJob() {
       .eq('date', today)
 
     await setBotState(process.env.SAM_WHATSAPP_TO, 'idle', null)
-    await twilioReply(
+    await whatsappReply(
       process.env.SAM_WHATSAPP_TO,
       "No worries — I've locked in today's prep as suggested ✓"
     )
@@ -199,7 +199,7 @@ async function runPrepAutoConfirmJob() {
 
 async function runEveningCheckinJob() {
   await setBotState(process.env.SAM_WHATSAPP_TO, 'awaiting_evening_checkin', null)
-  await twilioReply(
+  await whatsappReply(
     process.env.SAM_WHATSAPP_TO,
     'Hi Sam! How did today go? 🌇\n\nAnything to flag — stockouts, big groups, equipment trouble, or power cuts?\n\n(Voice note or text, whichever is easier)'
   )
@@ -218,7 +218,7 @@ async function runWastagePromptJob() {
   const exampleText = examples.length > 0 ? examples.join(', ') : 'biryani, fish curry'
 
   await setBotState(process.env.SAM_WHATSAPP_TO, 'awaiting_wastage', { date: today })
-  await twilioReply(
+  await whatsappReply(
     process.env.SAM_WHATSAPP_TO,
     `Hi Sam! What's left over tonight? 🗑️\n\n${exampleText}\n\n(e.g. 'biryani 3, fish curry 0, chai all sold')`
   )

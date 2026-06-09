@@ -1,7 +1,7 @@
 const axios = require('axios')
 const supabase = require('../../services/supabaseClient')
 const { callClaudeJSON } = require('../../services/claudeService')
-const { setBotState, todayIST, twilioReply } = require('./helpers')
+const { setBotState, todayIST, whatsappReply } = require('./helpers')
 
 const SYSTEM_PROMPT_A = `You are an assistant for a small cafe in Goa, India.
 The cafe owner, Sam, has sent a text message describing how today went.
@@ -90,7 +90,7 @@ async function handleTextCheckin(phoneNumber, rawText, today) {
       claude_parse_success: false
     }, { onConflict: 'date' })
     await setBotState(phoneNumber, 'idle', null)
-    await twilioReply(phoneNumber, 'Got it Sam, I saved your note ✓')
+    await whatsappReply(phoneNumber, 'Got it Sam, I saved your note ✓')
     return
   }
 
@@ -103,11 +103,11 @@ async function handleTextCheckin(phoneNumber, rawText, today) {
   }, { onConflict: 'date' })
 
   await setBotState(phoneNumber, 'idle', null)
-  await twilioReply(phoneNumber, buildReply(parsed))
+  await whatsappReply(phoneNumber, buildReply(parsed))
 }
 
 async function handleVoiceCheckin(phoneNumber, mediaUrl, today) {
-  await twilioReply(phoneNumber, 'Got it, listening... 🎧')
+  await whatsappReply(phoneNumber, 'Got it, listening... 🎧')
 
   let parsed = null
 
@@ -157,7 +157,7 @@ async function handleVoiceCheckin(phoneNumber, mediaUrl, today) {
       claude_parse_success: false
     }, { onConflict: 'date' })
     await setBotState(phoneNumber, 'idle', null)
-    await twilioReply(phoneNumber, 'Got it Sam, I saved your note ✓')
+    await whatsappReply(phoneNumber, 'Got it Sam, I saved your note ✓')
     return
   }
 
@@ -171,7 +171,7 @@ async function handleVoiceCheckin(phoneNumber, mediaUrl, today) {
   }, { onConflict: 'date' })
 
   await setBotState(phoneNumber, 'idle', null)
-  await twilioReply(phoneNumber, buildReply(signals))
+  await whatsappReply(phoneNumber, buildReply(signals))
 }
 
 async function handleEveningCheckinReply(phoneNumber, message, isVoiceNote, mediaUrl) {

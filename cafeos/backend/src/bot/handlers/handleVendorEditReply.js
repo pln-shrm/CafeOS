@@ -1,4 +1,4 @@
-const { parseVendorItems, setBotState, twilioReply } = require('./helpers')
+const { parseVendorItems, setBotState, whatsappReply } = require('./helpers')
 
 function buildVendorMessage(items) {
   const list = items.map(item => `${item.name} ${item.qty}${item.unit || ''}`)
@@ -18,7 +18,7 @@ async function handleVendorEditReply(phoneNumber, message, context) {
   }
 
   await setBotState(phoneNumber, 'awaiting_vendor_confirm', nextContext)
-  await twilioReply(
+  await whatsappReply(
     phoneNumber,
     `Got it — here's the updated order: ${formattedMessage}\nReply 1 to confirm.`
   )
