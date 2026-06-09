@@ -1,11 +1,11 @@
 const supabase = require('../../services/supabaseClient')
-const { callClaude } = require('../../services/claudeService')
+const { callGemini } = require('../../services/geminiService')
 const { setBotState, whatsappReply } = require('./helpers')
 
 const SYSTEM_PROMPT_F = `You are CafeOS, generating a WhatsApp vendor order message on behalf of Sam's Cafe in Goa.
 The message must sound like Sam wrote it herself — natural, conversational, direct.
 The vendor should not know a system generated this.
-Return ONLY the message text — no quotes, no preamble, no label, no explanation.
+Return ONLY the message text — no quotes, no preamble, no label, no explanation, no markdown, no backticks.
 
 Rules:
 - Write in simple, warm Hindi-English mix OR plain English depending on vendor name context.
@@ -25,7 +25,7 @@ async function buildForwardableMessage(items, vendorName) {
   if (!itemList) return null
 
   const userMessage = `Items: ${itemList}\nDelivery: tomorrow morning\nNotes: none`
-  const claudeMsg = await callClaude(SYSTEM_PROMPT_F, userMessage, 300, 0.7)
+  const claudeMsg = await callGemini(SYSTEM_PROMPT_F, userMessage, 300, 0.7)
   if (claudeMsg) return claudeMsg
 
   // Fallback

@@ -1,22 +1,40 @@
 const axios = require('axios')
 const supabase = require('../../services/supabaseClient')
-const { callClaudeJSON } = require('../../services/claudeService')
+const { callGeminiJSON } = require('../../services/geminiService')
 const { setBotState, todayIST, whatsappReply } = require('./helpers')
+
+const schemaA = {
+  type: "object",
+  properties: {
+    stockouts: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          item: { type: "string" },
+          time: { type: "string", nullable: true }
+        }
+      },
+      nullable: true
+    },
+    demand_spike: { type: "string", nullable: true },
+    power_disruption: {
+      type: "object",
+      properties: {
+        time: { type: "string", nullable: true },
+        duration_hours: { type: "number", nullable: true }
+      },
+      nullable: true
+    },
+    weather_impact: { type: "string", nullable: true },
+    other_notes: { type: "string", nullable: true }
+  }
+};
 
 const SYSTEM_PROMPT_A = `You are an assistant for a small cafe in Goa, India.
 The cafe owner, Sam, has sent a text message describing how today went.
 Extract structured signals from her message.
 Sam may write in English, Hindi, Konkani, or a mix of all three.
-Return ONLY valid JSON — no preamble, no markdown, no explanation.
-
-JSON schema:
-{
-  "stockouts": [{ "item": string, "time": string|null }] | null,
-  "demand_spike": string|null,
-  "power_disruption": { "time": string|null, "duration_hours": number|null } | null,
-  "weather_impact": string|null,
-  "other_notes": string|null
-}
 
 Rules:
 - "stockouts": list of items that ran out. Include approximate time if mentioned. null if none mentioned.
@@ -29,23 +47,41 @@ Rules:
 - Konkani number words: ek=1, don=2, teen=3, char=4, panch=5, saa=6, saat=7, aath=8, nav=9, dha=10.
 - Hindi number words: ek=1, do=2, teen=3, char=4, panch=5, chhe=6, saat=7, aath=8, nau=9, das=10.`
 
+const schemaB = {
+  type: "object",
+  properties: {
+    transcription: { type: "string" },
+    stockouts: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          item: { type: "string" },
+          time: { type: "string", nullable: true }
+        }
+      },
+      nullable: true
+    },
+    demand_spike: { type: "string", nullable: true },
+    power_disruption: {
+      type: "object",
+      properties: {
+        time: { type: "string", nullable: true },
+        duration_hours: { type: "number", nullable: true }
+      },
+      nullable: true
+    },
+    weather_impact: { type: "string", nullable: true },
+    other_notes: { type: "string", nullable: true }
+  }
+};
+
 const SYSTEM_PROMPT_B = `You are an assistant for a small cafe in Goa, India.
 You will receive an audio file — a voice note from the cafe owner, Sam.
 Sam may speak in English, Hindi, Konkani, or a mix of all three.
 
 Step 1: Transcribe the voice note accurately.
 Step 2: Extract structured operational signals from the transcription.
-Return ONLY valid JSON — no preamble, no markdown, no explanation.
-
-JSON schema:
-{
-  "transcription": string,
-  "stockouts": [{ "item": string, "time": string|null }] | null,
-  "demand_spike": string|null,
-  "power_disruption": { "time": string|null, "duration_hours": number|null } | null,
-  "weather_impact": string|null,
-  "other_notes": string|null
-}
 
 Rules:
 - "transcription": full verbatim transcription of the audio. Preserve all languages spoken.
@@ -79,7 +115,7 @@ function buildReply(parsed) {
 
 async function handleTextCheckin(phoneNumber, rawText, today) {
   const userMessage = `Sam's message: "${rawText}"`
-  const parsed = await callClaudeJSON(SYSTEM_PROMPT_A, userMessage, 500)
+  const parsed = await callGeminiJSON(SYSTEM_PROMPT_A, userMessage, 500, schemaA)
 
   if (parsed === null) {
     await supabase.from('checkins').upsert({
@@ -125,22 +161,17 @@ async function handleVoiceCheckin(phoneNumber, mediaUrl, today) {
       const mediaType = audioRes.headers['content-type'] || 'audio/ogg'
 
       const userContent = [
+        "This is Sam's voice note from this evening. Please transcribe and extract signals.",
         {
-          type: 'text',
-          text: "This is Sam's voice note from this evening. Please transcribe and extract signals."
-        },
-        {
-          type: 'document',
-          source: {
-            type: 'base64',
-            media_type: mediaType,
+          inlineData: {
+            mimeType: mediaType,
             data: base64Audio
           }
         }
       ]
 
-      // callClaudeJSON handles null return if API rejects audio content type
-      parsed = await callClaudeJSON(SYSTEM_PROMPT_B, userContent, 800)
+      // callGeminiJSON handles null return if API rejects audio content type
+      parsed = await callGeminiJSON(SYSTEM_PROMPT_B, userContent, 800, schemaB)
     } catch (err) {
       console.warn('[EveningCheckin] Audio download/parse failed:', err.message)
       parsed = null

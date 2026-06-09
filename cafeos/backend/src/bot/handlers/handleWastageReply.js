@@ -1,33 +1,41 @@
 const supabase = require('../../services/supabaseClient')
-const { callClaudeJSON, callClaude } = require('../../services/claudeService')
+const { callGeminiJSON, callGemini } = require('../../services/geminiService')
 const { setBotState, todayIST, whatsappReply, fuzzyMatchMenuItem } = require('./helpers')
 const { generatePredictions } = require('../../intelligence/predictions')
 const { formatInTimeZone } = require('date-fns-tz')
 
 const IST = 'Asia/Kolkata'
 
+const schemaG = {
+  type: "object",
+  properties: {
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          item: { type: "string" },
+          qty_left: { type: "number" }
+        }
+      }
+    },
+    all_clear: { type: "boolean" },
+    unclear: { type: "boolean" }
+  }
+};
+
 const SYSTEM_PROMPT_G = `You are an assistant for a small cafe in Goa, India.
 Sam has just sent her nightly wastage log — what portions are left over from today.
 Extract structured leftover quantities per item.
 Sam may write in English, Hindi, Konkani, or a mix.
 Number words are valid: teen=3, char=4, panch=5, don/do=2, ek=1, chhe/saa=6.
-Return ONLY valid JSON — no preamble, no markdown, no explanation.
-
-JSON schema:
-{
-  "items": [
-    { "item": string, "qty_left": number }
-  ],
-  "all_clear": boolean,
-  "unclear": boolean
-}
 
 Rules:
 - "item": item name as Sam stated it. Match loosely to known menu items.
 - "qty_left": integer number of portions or units remaining.
 - Treat "nil", "zero", "nahi", "khatam", "sold out" as 0.
 - Treat "fine", "ok", "thoda", "negligible", "bahut kam" as 0 — negligible remainder.
-- "all_clear": set to true if Sam said everything sold (e.g. "sab bik gaya", "nothing left", "all clear", "sab khatam", "zero wastage"). When true, set items to [].
+- "all_clear": set to true if Sam implies EVERYTHING sold (e.g. "sab bik gaya", "nothing left", "all clear", "sab khatam", "zero wastage"). When true, set items to [].
 - "unclear": set to true only if the message is completely unintelligible and no items/quantities can be extracted at all.
 - Never invent items Sam did not mention.
 - Sam does not need to mention every item — only report what she explicitly stated.`
@@ -35,7 +43,7 @@ Rules:
 const SYSTEM_PROMPT_F = `You are CafeOS, generating a WhatsApp vendor order message on behalf of Sam's Cafe in Goa.
 The message must sound like Sam wrote it herself — natural, conversational, direct.
 The vendor should not know a system generated this.
-Return ONLY the message text — no quotes, no preamble, no label, no explanation.
+Return ONLY the message text — no quotes, no preamble, no label, no explanation, no markdown, no backticks.
 
 Rules:
 - Write in simple, warm Hindi-English mix OR plain English depending on vendor name context.
@@ -95,7 +103,7 @@ async function formatVendorMessage(items, vendorName) {
   const itemList = items.map(i => `${i.name} ${i.qty}`).join(', ')
   const userMessage = `Items: ${itemList}\nDelivery: tomorrow morning\nNotes: none`
 
-  const claudeMsg = await callClaude(SYSTEM_PROMPT_F, userMessage, 300, 0.7)
+  const claudeMsg = await callGemini(SYSTEM_PROMPT_F, userMessage, 300, 0.7)
   if (claudeMsg) return claudeMsg
 
   // Fallback: deterministic format
@@ -116,7 +124,7 @@ async function handleWastageReply(phoneNumber, message) {
 
 Sam's wastage message: "${message}"`
 
-  const parsed = await callClaudeJSON(SYSTEM_PROMPT_G, userMessage, 400)
+  const parsed = await callGeminiJSON(SYSTEM_PROMPT_G, userMessage, 400, schemaG)
 
   if (parsed === null || parsed.unclear) {
     await whatsappReply(

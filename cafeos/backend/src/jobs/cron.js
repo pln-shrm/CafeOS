@@ -2,7 +2,7 @@ const cron = require('node-cron')
 const axios = require('axios')
 const supabase = require('../services/supabaseClient')
 const { whatsappReply } = require('../services/whatsappClient')
-const { callClaude } = require('../services/claudeService')
+const { callGemini } = require('../services/geminiService')
 const { setBotState, todayIST } = require('../bot/handlers/helpers')
 const { generatePredictions } = require('../intelligence/predictions')
 
@@ -12,7 +12,7 @@ const SYSTEM_PROMPT_C = `You are CafeOS, a friendly assistant for Sam's Cafe in 
 Generate the morning prep sheet WhatsApp message for Sam.
 Use warm, plain English. Short sentences. No jargon.
 Format rupee amounts as ₹X,XXX. Portions as whole numbers.
-Return ONLY the message text — no JSON, no preamble, no explanation, no markdown.
+Return ONLY the message text — no JSON, no preamble, no explanation, no markdown, no backticks.
 
 Rules:
 - Open exactly with: "Good morning Sam! Here's today's prep 🍽️"
@@ -118,7 +118,7 @@ async function runMorningPrepJob() {
     for (const r of missingRows) existingMap.set(r.menu_item_id, r)
   }
 
-  // Build prediction list for Claude + context
+  // Build prediction list for Gemini + context
   const contextPredictions = (menuItems || []).map(item => {
     const found = existingMap.get(item.id)
     const qty = found?.owner_override ?? found?.predicted_qty ?? item.seed_qty ?? 10
@@ -141,7 +141,7 @@ Day of week: ${dayOfWeek}
 Date: ${formattedDate}`
 
   // Step 4: Call Prompt C for formatted message
-  let messageText = await callClaude(SYSTEM_PROMPT_C, userMessage, 600, 0.7)
+  let messageText = await callGemini(SYSTEM_PROMPT_C, userMessage, 600, 0.7)
 
   if (!messageText) {
     // Deterministic fallback
