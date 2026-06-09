@@ -15,33 +15,22 @@ router.post('/staff/login', async (req, res) => {
     return fail(res, 'INVALID_PIN_FORMAT', 'PIN must be exactly 4 numeric digits', 400)
   }
 
+  if (!staff_id) {
+    return fail(res, 'MISSING_STAFF_ID', 'staff_id is required', 400)
+  }
+
   let matched = null
 
-  if (staff_id) {
-    // Fast path: verify a single staff member directly
-    const { data: member, error } = await supabase
-      .from('staff')
-      .select('id, name, role, pin_hash')
-      .eq('id', staff_id)
-      .eq('active', true)
-      .maybeSingle()
-    if (error) throw error
-    if (member && member.pin_hash && await bcrypt.compare(String(pin), member.pin_hash)) {
-      matched = member
-    }
-  } else {
-    // Slow path: scan all active staff (sequential — bcrypt is CPU-bound)
-    const { data: staffList, error } = await supabase
-      .from('staff')
-      .select('id, name, role, pin_hash')
-      .eq('active', true)
-    if (error) throw error
-    for (const member of staffList) {
-      if (member.pin_hash && await bcrypt.compare(String(pin), member.pin_hash)) {
-        matched = member
-        break
-      }
-    }
+  // Verify a single staff member directly
+  const { data: member, error } = await supabase
+    .from('staff')
+    .select('id, name, role, pin_hash')
+    .eq('id', staff_id)
+    .eq('active', true)
+    .maybeSingle()
+  if (error) throw error
+  if (member && member.pin_hash && await bcrypt.compare(String(pin), member.pin_hash)) {
+    matched = member
   }
 
   if (!matched) return fail(res, 'INVALID_PIN', 'Incorrect PIN', 401)

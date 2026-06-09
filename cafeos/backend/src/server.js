@@ -47,13 +47,15 @@ app.use('/api/sheets', sheetsRouter)
 app.use('/api/credit', creditRouter)
 app.use('/webhook/whatsapp', webhookRouter)
 
+const logger = require('./utils/logger')
+
 if (process.env.NODE_ENV !== 'production') {
   app.get('/dev/trigger-prep-job', async (req, res) => {
     try {
       await runMorningPrepJob()
       res.json({ success: true })
     } catch (err) {
-      console.error('[DEV] Prep job trigger failed', err)
+      logger.error({ err }, '[DEV] Prep job trigger failed')
       res.status(500).json({ success: false })
     }
   })
@@ -66,5 +68,5 @@ require('./jobs/cron')
 
 const PORT = process.env.PORT || 3000
 app.listen(PORT, () => {
-  console.log(`[CafeOS] Backend running on port ${PORT} (${process.env.NODE_ENV || 'development'})`)
+  logger.info(`[CafeOS] Backend running on port ${PORT} (${process.env.NODE_ENV || 'development'})`)
 })
