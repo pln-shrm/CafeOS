@@ -202,7 +202,10 @@ router.post('/', async (req, res) => {
       return res.status(200).send('OK') // can't guarantee dedup — bail out safely
     }
 
+    console.log(`[DEBUG] Incoming from: "${From}", Expected: "${process.env.SAM_WHATSAPP_TO}"`)
+
     if (From !== process.env.SAM_WHATSAPP_TO) {
+      console.log(`[DEBUG] Mismatch! Ignoring message.`)
       return res.status(200).send('OK')
     }
 
