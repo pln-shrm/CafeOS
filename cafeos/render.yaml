@@ -3,7 +3,7 @@ services:
     name: cafeos-backend
     env: node
     plan: free
-    rootDir: backend
+    rootDir: cafeos/backend
     buildCommand: npm install
     startCommand: npm start
     envVars:
@@ -33,7 +33,7 @@ services:
   - type: web
     name: cafeos-frontend
     env: static
-    rootDir: frontend
+    rootDir: cafeos/frontend
     buildCommand: npm install && npm run build
     staticPublishPath: dist
     envVars:
