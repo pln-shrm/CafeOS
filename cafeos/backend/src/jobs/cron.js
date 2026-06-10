@@ -217,6 +217,22 @@ async function runWastagePromptJob() {
   const examples = (predictions || []).map(p => p.menu_items?.name || 'Item')
   const exampleText = examples.length > 0 ? examples.join(', ') : 'biryani, fish curry'
 
+  // Only set state if Sam isn't mid-flow in something else
+  const { data: currentState } = await supabase
+    .from('bot_state')
+    .select('current_state')
+    .eq('phone_number', process.env.SAM_WHATSAPP_TO)
+    .maybeSingle()
+
+  const safeToOverwrite = !currentState?.current_state
+    || currentState.current_state === 'idle'
+    || currentState.current_state === 'awaiting_evening_checkin'
+
+  if (!safeToOverwrite) {
+    console.warn(`[CRON] Wastage prompt skipped — bot is in state: ${currentState.current_state}`)
+    return
+  }
+
   await setBotState(process.env.SAM_WHATSAPP_TO, 'awaiting_wastage', { date: today })
   await whatsappReply(
     process.env.SAM_WHATSAPP_TO,
@@ -243,7 +259,7 @@ cron.schedule('30 9 * * 2-7', () => {
 }, IST)
 
 // 7:00 PM Tue–Sun
-cron.schedule('0 19 * * 2-0', () => {
+cron.schedule('0 19 * * 2-7', () => {
   console.log(`[CRON] EVENING_CHECKIN_PROMPT fired at ${new Date().toISOString()}`)
   runEveningCheckinJob().catch(err => console.error('[CRON] EVENING_CHECKIN_PROMPT failed', err))
 }, IST)

@@ -1,6 +1,9 @@
 require('dotenv').config()
 require('express-async-errors')
 
+if (!process.env.JWT_SECRET) throw new Error('JWT_SECRET env var is not set — refusing to start')
+if (!process.env.META_APP_SECRET) console.warn('[CafeOS] META_APP_SECRET not set — webhook signature validation will be skipped')
+
 const express = require('express')
 const cors = require('cors')
 
@@ -17,22 +20,26 @@ const predictionsRouter = require('./routes/predictions')
 const attendanceRouter = require('./routes/attendance')
 const sheetsRouter = require('./routes/sheets')
 const creditRouter = require('./routes/credit')
+const ingredientsRouter = require('./routes/ingredients')
 const webhookRouter = require('./bot/webhook')
 const { runMorningPrepJob } = require('./jobs/cron')
 
 const app = express()
+app.set('trust proxy', 1) // trust first proxy (Render, Railway, Heroku) for correct req.ip
 
-app.use(cors())
-app.use(express.json())
+const allowedOrigins = process.env.FRONTEND_ORIGIN
+  ? process.env.FRONTEND_ORIGIN.split(',').map(s => s.trim())
+  : ['http://localhost:5173', 'http://localhost:3000']
+app.use(cors({ origin: allowedOrigins, credentials: true }))
+
+app.use(express.json({
+  verify: (req, _res, buf) => { req.rawBody = buf }
+}))
 app.use(express.urlencoded({ extended: false }))
 app.use(requestLogger)
 
 app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    env: process.env.NODE_ENV
-  })
+  res.json({ status: 'ok', timestamp: new Date().toISOString() })
 })
 
 app.use('/api/auth', authRouter)
@@ -45,6 +52,7 @@ app.use('/api/predictions', predictionsRouter)
 app.use('/api/attendance', attendanceRouter)
 app.use('/api/sheets', sheetsRouter)
 app.use('/api/credit', creditRouter)
+app.use('/api/ingredients', ingredientsRouter)
 app.use('/webhook/whatsapp', webhookRouter)
 
 const logger = require('./utils/logger')
@@ -62,9 +70,6 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 app.use(errorHandler)
-
-// Start cron jobs
-require('./jobs/cron')
 
 const PORT = process.env.PORT || 3000
 app.listen(PORT, () => {

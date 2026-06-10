@@ -8,6 +8,12 @@ function todayIST() {
   return formatInTimeZone(new Date(), IST, 'yyyy-MM-dd')
 }
 
+function tomorrowIST() {
+  const d = new Date()
+  d.setDate(d.getDate() + 1)
+  return formatInTimeZone(d, IST, 'yyyy-MM-dd')
+}
+
 function formatRupees(amount) {
   if (amount === null || amount === undefined || Number.isNaN(Number(amount))) return '₹0'
   return new Intl.NumberFormat('en-IN', {
@@ -40,19 +46,59 @@ async function setBotState(phoneNumber, state, contextJson = null) {
   if (error) throw error
 }
 
-function parseVendorItems(text) {
+async function parseVendorItems(text) {
   const items = []
-  const regex = /(\w+)\s+(\d+\.?\d*)\s*(kg|l|g|litre|pieces|pcs)?/gi
-  let match
-  while ((match = regex.exec(text)) !== null) {
-    const name = match[1]
+  // Split on commas/semicolons so each segment is one item
+  const segments = text.split(/[,;]+/)
+  for (const seg of segments) {
+    const trimmed = seg.trim()
+    if (!trimmed) continue
+    // Match: any words as name, then a number, then optional unit
+    const match = trimmed.match(/^([\w\s]+?)\s+(\d+\.?\d*)\s*(kg|l|g|litre|litres|pieces|pcs)?$/i)
+    if (!match) continue
+    const name = match[1].trim()
     const qty = Number(match[2])
-    const unit = match[3] || ''
-    if (!Number.isNaN(qty)) {
+    const unit = match[3]?.toLowerCase() || ''
+    if (!Number.isNaN(qty) && qty > 0 && name) {
       items.push({ name, qty, unit })
     }
   }
   return items
+}
+
+async function incrementInventoryLevels(items) {
+  for (const item of items) {
+    const qty = Number(item.qty ?? item.quantity ?? 0)
+    if (!qty || qty <= 0) continue
+
+    let ingredientId = item.ingredient_id || null
+
+    // Fall back to case-insensitive name match if no ingredient_id on the item
+    if (!ingredientId) {
+      const { data: ing } = await supabase
+        .from('ingredient_master')
+        .select('id')
+        .ilike('name', item.name)
+        .maybeSingle()
+      ingredientId = ing?.id || null
+    }
+
+    if (!ingredientId) continue
+
+    const { data: existing } = await supabase
+      .from('inventory_levels')
+      .select('current_qty')
+      .eq('ingredient_id', ingredientId)
+      .maybeSingle()
+
+    await supabase
+      .from('inventory_levels')
+      .upsert({
+        ingredient_id: ingredientId,
+        current_qty: (existing?.current_qty ?? 0) + qty,
+        last_updated: new Date().toISOString()
+      }, { onConflict: 'ingredient_id' })
+  }
 }
 
 // Levenshtein distance for fuzzy name matching
@@ -104,9 +150,11 @@ function fuzzyMatchMenuItem(searchName, menuItems) {
 module.exports = {
   whatsappReply,
   todayIST,
+  tomorrowIST,
   formatRupees,
   getBotState,
   setBotState,
   parseVendorItems,
-  fuzzyMatchMenuItem
+  fuzzyMatchMenuItem,
+  incrementInventoryLevels
 }

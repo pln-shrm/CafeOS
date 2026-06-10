@@ -1,4 +1,6 @@
 const { Router } = require('express')
+const axios = require('axios')
+const crypto = require('crypto')
 
 const supabase = require('../services/supabaseClient')
 const {
@@ -20,6 +22,10 @@ const handleStockQuery = require('./handlers/handleStockQuery')
 const handleBalanceQuery = require('./handlers/handleBalanceQuery')
 const handleEventFlag = require('./handlers/handleEventFlag')
 const handleFallback = require('./handlers/handleFallback')
+const handleReceivingCommand = require('./handlers/handleReceivingCommand')
+const handleReceivingConfirmReply = require('./handlers/handleReceivingConfirmReply')
+const handleReceivingEditReply = require('./handlers/handleReceivingEditReply')
+const handleAnomalyResolutionReply = require('./handlers/handleAnomalyResolutionReply')
 
 const router = Router()
 
@@ -67,12 +73,26 @@ async function routeMessage({ phoneNumber, message, isVoiceNote, mediaUrl }) {
     case 'awaiting_wastage':
       await handleWastageReply(phoneNumber, trimmed)
       return
+    case 'awaiting_receiving_confirm':
+      await handleReceivingConfirmReply(phoneNumber, trimmed, stateRow.context_json)
+      return
+    case 'awaiting_receiving_edit':
+      await handleReceivingEditReply(phoneNumber, trimmed, stateRow.context_json)
+      return
+    case 'awaiting_anomaly_resolution':
+      await handleAnomalyResolutionReply(phoneNumber, trimmed, stateRow.context_json)
+      return
     default:
       break
   }
 
   if (lowered.startsWith('order')) {
     await handleVendorOrderCommand(phoneNumber, trimmed)
+    return
+  }
+
+  if (lowered.includes('received') || lowered.includes('arrived') || lowered.includes('delivery')) {
+    await handleReceivingCommand(phoneNumber, trimmed)
     return
   }
 
@@ -122,10 +142,23 @@ router.get('/', (req, res) => {
 })
 
 router.post('/', async (req, res) => {
-  const body = req.body
-  console.log('\n--- Incoming Webhook ---')
-  console.log(JSON.stringify(body, null, 2))
+  // Verify Meta HMAC signature to reject forged webhooks
+  const appSecret = process.env.META_APP_SECRET
+  if (appSecret) {
+    const sigHeader = req.headers['x-hub-signature-256']
+    if (!sigHeader) return res.sendStatus(401)
+    const expected = 'sha256=' + crypto
+      .createHmac('sha256', appSecret)
+      .update(req.rawBody)
+      .digest('hex')
+    const sigBuf = Buffer.from(sigHeader)
+    const expBuf = Buffer.from(expected)
+    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+      return res.sendStatus(403)
+    }
+  }
 
+  const body = req.body
 
   if (!body.object) {
     return res.sendStatus(404)
@@ -142,6 +175,8 @@ router.post('/', async (req, res) => {
     const MessageSid = messageInfo.id
     const From = messageInfo.from
     const Body = messageInfo.text?.body || ''
+    const isAudio = messageInfo.type === 'audio'
+    const audioMediaId = isAudio ? messageInfo.audio?.id : null
 
     const { data: existing, error: dedupeErr } = await supabase
       .from('processed_webhooks')
@@ -151,6 +186,7 @@ router.post('/', async (req, res) => {
 
     if (dedupeErr) {
       console.error('[Webhook] Dedup check failed', dedupeErr)
+      return res.status(200).send('OK') // fail-safe: don't process if we can't deduplicate
     }
 
     if (existing) {
@@ -163,6 +199,7 @@ router.post('/', async (req, res) => {
 
     if (insertErr) {
       console.error('[Webhook] Dedup insert failed', insertErr)
+      return res.status(200).send('OK') // can't guarantee dedup — bail out safely
     }
 
     if (From !== process.env.SAM_WHATSAPP_TO) {
@@ -171,12 +208,25 @@ router.post('/', async (req, res) => {
 
     res.status(200).send('OK')
 
-    setImmediate(() => {
+    setImmediate(async () => {
+      let mediaUrl = null
+      if (isAudio && audioMediaId) {
+        try {
+          const mediaRes = await axios.get(
+            `https://graph.facebook.com/v17.0/${audioMediaId}`,
+            { headers: { Authorization: `Bearer ${process.env.META_ACCESS_TOKEN}` } }
+          )
+          mediaUrl = mediaRes.data?.url || null
+        } catch (err) {
+          console.warn('[Webhook] Failed to resolve audio media URL', err.message)
+        }
+      }
+
       routeMessage({
         phoneNumber: From,
         message: Body,
-        isVoiceNote: false,
-        mediaUrl: null
+        isVoiceNote: isAudio,
+        mediaUrl
       }).catch(err => {
         console.error('[Webhook] Async processing failed', err)
       })

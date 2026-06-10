@@ -6,7 +6,7 @@ function buildVendorMessage(items) {
 }
 
 async function handleVendorEditReply(phoneNumber, message, context) {
-  const parsedItems = parseVendorItems(message)
+  const parsedItems = await parseVendorItems(message)
   const items = parsedItems.length > 0 ? parsedItems : (context?.items || [])
   const formattedMessage = buildVendorMessage(items)
   const vendorName = context?.vendor_name || 'vendor'

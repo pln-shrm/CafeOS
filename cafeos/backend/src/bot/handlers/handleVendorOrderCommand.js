@@ -16,7 +16,7 @@ function buildVendorMessage(items) {
 async function handleVendorOrderCommand(phoneNumber, message) {
   const vendorName = extractVendorName(message)
   const itemText = message.split('→')[0].split('->')[0]
-  const items = parseVendorItems(itemText)
+  const items = await parseVendorItems(itemText)
 
   if (items.length === 0) {
     await whatsappReply(phoneNumber, 'Please include items like: order rice 5kg, dal 3kg → Rice Vendor')

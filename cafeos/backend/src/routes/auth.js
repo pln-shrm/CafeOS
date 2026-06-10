@@ -1,14 +1,23 @@
 const { Router } = require('express')
 const bcrypt = require('bcrypt')
 const jwt = require('jsonwebtoken')
+const rateLimit = require('express-rate-limit')
 const supabase = require('../services/supabaseClient')
 const { ok, fail } = require('../utils/response')
 
 const router = Router()
 
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,                   // 10 attempts per IP per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'TOO_MANY_ATTEMPTS', message: 'Too many login attempts — try again in 15 minutes' }
+})
+
 // POST /api/auth/staff/login
 // Body: { pin } or { staff_id, pin } — providing staff_id avoids scanning all staff
-router.post('/staff/login', async (req, res) => {
+router.post('/staff/login', loginLimiter, async (req, res) => {
   const { pin, staff_id } = req.body
 
   if (!pin || !/^\d{4}$/.test(String(pin))) {

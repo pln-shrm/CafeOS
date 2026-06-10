@@ -68,7 +68,7 @@ async function callClaude(systemPrompt, userContent, maxTokens = 500, temperatur
           'anthropic-version': '2023-06-01',
           'content-type': 'application/json'
         },
-        timeout: 12000  // 12s hard timeout. Twilio needs ACK within 5s — call Claude async.
+        timeout: 12000  // 12s hard timeout. Meta WhatsApp API needs ACK within 5s — call Claude async.
       }
     )
 
@@ -120,17 +120,17 @@ Return ONLY the corrected JSON, no explanation:\n${clean}`
 module.exports = { callClaude, callClaudeJSON }
 ```
 
-### Critical Constraint: Never Block the Twilio ACK
+### Critical Constraint: Never Block the Meta WhatsApp API ACK
 
-Twilio requires a response within 5 seconds or it retries the webhook. Claude calls take 2–8 seconds. The pattern is:
+Meta WhatsApp API requires a response within 5 seconds or it retries the webhook. Claude calls take 2–8 seconds. The pattern is:
 
 ```
-1. Twilio POST → res.status(200).send('<Response></Response>') immediately
+1. Meta WhatsApp API POST → res.status(200).send('<Response></Response>') immediately
 2. Process Claude call asynchronously (setImmediate or detached async)
-3. Send Twilio reply via client.messages.create() after Claude returns
+3. Send Meta WhatsApp API reply via client.messages.create() after Claude returns
 ```
 
-Every handler must follow this pattern. If Claude is being awaited, the Twilio ACK has already been sent.
+Every handler must follow this pattern. If Claude is being awaited, the Meta WhatsApp API ACK has already been sent.
 
 ### Temperature Settings
 
@@ -189,7 +189,7 @@ Rules:
 
 ```javascript
 const userMessage = `Sam's message: "${rawText}"`
-// rawText: the exact WhatsApp message body from Twilio webhook Body field
+// rawText: the exact WhatsApp message body from Meta WhatsApp API webhook Body field
 ```
 
 No additional context is needed. The system prompt is self-contained.
@@ -233,7 +233,7 @@ if (parsed === null) {
     parsed_signals: null,
     parse_failed: true
   }, { onConflict: 'date' })
-  await twilioReply("Got it Sam, I saved your note ✓")
+  await whatsappReply("Got it Sam, I saved your note ✓")
   return
 }
 
@@ -269,7 +269,7 @@ const reply = lines.length
   ? `Got it, noted for tomorrow ✓\n${lines.join('\n')}`
   : `Got it Sam ✓ All noted.`
 
-await twilioReply(reply)
+await whatsappReply(reply)
 ```
 
 ### Settings
@@ -299,13 +299,13 @@ Sam sends a **voice note** in response to the 7:00 PM check-in prompt. Detected 
 ### Pre-Processing (Before Claude Call)
 
 ```javascript
-// 1. Download the audio file from Twilio's MediaUrl0
-//    Twilio requires HTTP Basic Auth: AccountSid:AuthToken
+// 1. Download the audio file from Meta WhatsApp API's MediaUrl0
+//    Meta WhatsApp API requires HTTP Basic Auth: AccountSid:AuthToken
 const audioResponse = await axios.get(mediaUrl, {
   responseType: 'arraybuffer',
   auth: {
-    username: process.env.TWILIO_ACCOUNT_SID,
-    password: process.env.TWILIO_AUTH_TOKEN
+    username: process.env.whatsapp_ACCOUNT_SID,
+    password: process.env.whatsapp_AUTH_TOKEN
   },
   timeout: 10000
 })
@@ -417,7 +417,7 @@ await supabase.from('checkins').upsert({
     weather_impact: parsed.weather_impact,
     other_notes: parsed.other_notes
   },
-  voice_note_url: mediaUrl,          // store original Twilio URL for reference
+  voice_note_url: mediaUrl,          // store original Meta WhatsApp API URL for reference
   parse_failed: false
 }, { onConflict: 'date' })
 ```
@@ -536,13 +536,13 @@ if (messageText === null) {
   // Fallback: build prep message deterministically without Claude
   const fallbackLines = predictions.map(p => `${p.item_name}: ${p.predicted_qty}`)
   const fallbackMessage = `Good morning Sam! Here's today's prep:\n\n${fallbackLines.join('\n')}\n\nReply 1 to confirm or tell me changes.`
-  await twilioSend(fallbackMessage)
+  await whatsappSend(fallbackMessage)
 } else {
   // Enforce character limit before sending
   const truncated = messageText.length > 1500 
     ? messageText.slice(0, 1480) + '...' 
     : messageText
-  await twilioSend(truncated)
+  await whatsappSend(truncated)
 }
 
 await supabase.from('bot_state').update({
@@ -642,7 +642,7 @@ Unclear message example:
 const parsed = await callClaudeJSON(systemPrompt, userMessage, 400)
 
 if (parsed === null || parsed.unclear) {
-  await twilioReply(`Sorry Sam, I didn't catch that clearly. Can you say it like:\n"biryani 25, fish curry 10"?`)
+  await whatsappReply(`Sorry Sam, I didn't catch that clearly. Can you say it like:\n"biryani 25, fish curry 10"?`)
   // State stays awaiting_prep_confirm — Sam can try again
   return
 }
@@ -650,7 +650,7 @@ if (parsed === null || parsed.unclear) {
 if (parsed.overrides.length === 0) {
   // Sam confirmed with no changes ("sab same")
   await confirmPrepSheet(today)
-  await twilioReply("Got it! Today's prep locked in ✓")
+  await whatsappReply("Got it! Today's prep locked in ✓")
   return
 }
 
@@ -666,7 +666,7 @@ for (const override of parsed.overrides) {
 
 // Build confirmation reply
 const changedLines = parsed.overrides.map(o => `${o.item_name}: ${o.qty === 0 ? 'skipped' : o.qty}`)
-await twilioReply(`Updated ✓\n${changedLines.join('\n')}\n\nAll other items unchanged.`)
+await whatsappReply(`Updated ✓\n${changedLines.join('\n')}\n\nAll other items unchanged.`)
 await supabase.from('bot_state').update({ current_state: 'idle' })
 ```
 
@@ -774,7 +774,7 @@ Sam's edit: "rice 6kg, add mustard oil 1L, skip dal"
 const parsed = await callClaudeJSON(systemPrompt, userMessage, 500)
 
 if (parsed === null) {
-  await twilioReply(`Sorry Sam, I didn't catch that order. Try:\n"order rice 5kg, dal 3kg → Rice Vendor"`)
+  await whatsappReply(`Sorry Sam, I didn't catch that order. Try:\n"order rice 5kg, dal 3kg → Rice Vendor"`)
   return
 }
 
@@ -784,7 +784,7 @@ if (!parsed.vendor_name) {
     current_state: 'awaiting_vendor_name',
     context_json: { pendingOrder: parsed }
   })
-  await twilioReply("Got the items ✓ Who should this go to? (Reply with vendor name)")
+  await whatsappReply("Got the items ✓ Who should this go to? (Reply with vendor name)")
   return
 }
 
@@ -907,7 +907,7 @@ await supabase.from('bot_state').update({
   }
 })
 
-await twilioReply(
+await whatsappReply(
   `Logged ✓\n\nReady to send to ${parsed.vendor_name}:\n\n"${finalMessage}"\n\nForward this message to place the order.\nReply 2 to edit.`
 )
 ```
@@ -1007,7 +1007,7 @@ All-clear:
 const parsed = await callClaudeJSON(systemPrompt, userMessage, 400)
 
 if (parsed === null || parsed.unclear) {
-  await twilioReply(
+  await whatsappReply(
     `Sorry Sam, I didn't catch that. Try:\n"biryani 3 left, fish curry zero, chai all sold"`
   )
   return  // State stays awaiting_wastage
@@ -1123,7 +1123,7 @@ Payment:
 const parsed = await callClaudeJSON(systemPrompt, userMessage, 300)
 
 if (parsed === null) {
-  await twilioReply(
+  await whatsappReply(
     `Sorry Sam, I didn't catch that. Try:\n"credit Rice Vendor ₹4500" or "paid Meat Vendor ₹2400"`
   )
   return
@@ -1138,7 +1138,7 @@ if (parsed.type === 'credit') {
     date: today
   })
   const balance = await getVendorBalance(parsed.vendor_name)
-  await twilioReply(`Credit logged ✓\n${parsed.vendor_name}: ₹${parsed.amount.toLocaleString('en-IN')} added\nOutstanding: ₹${balance.toLocaleString('en-IN')}`)
+  await whatsappReply(`Credit logged ✓\n${parsed.vendor_name}: ₹${parsed.amount.toLocaleString('en-IN')} added\nOutstanding: ₹${balance.toLocaleString('en-IN')}`)
 } else {
   await logPaymentAndUpdateBalance(parsed)
 }
@@ -1241,12 +1241,12 @@ if (summaryText === null) {
     `Biggest day: ${highestDay.name}`,
     `Most wastage: ${mostWasted.name}`
   ]
-  await twilioSend(fallbackLines.join('\n'))
+  await whatsappSend(fallbackLines.join('\n'))
 } else {
   const truncated = summaryText.length > 1500 
     ? summaryText.slice(0, 1480) + '...' 
     : summaryText
-  await twilioSend(truncated)
+  await whatsappSend(truncated)
 }
 ```
 
@@ -1361,7 +1361,7 @@ For voice note: use same multimodal content array pattern as Prompt B, but with 
 const parsed = await callClaudeJSON(systemPrompt, userMessage, 800)
 
 if (parsed === null) {
-  await twilioReply("Sorry Sam, I couldn't structure that recipe. Try describing it again or type it out.")
+  await whatsappReply("Sorry Sam, I couldn't structure that recipe. Try describing it again or type it out.")
   return
 }
 
@@ -1374,7 +1374,7 @@ await supabase.from('recipe_cards').upsert({
 
 const ingredientCount = parsed.ingredients.length
 const stepCount = parsed.steps.length
-await twilioReply(
+await whatsappReply(
   `Recipe saved ✓\n${parsed.dish_name} — ${ingredientCount} ingredients, ${stepCount} steps${parsed.incomplete ? '\n(Looks incomplete — feel free to add more)' : ''}`
 )
 ```
@@ -1486,13 +1486,13 @@ Weekdays average around ₹4,500.
 const answer = await callClaude(systemPrompt, userMessage, 400, 0.5)
 
 if (answer === null) {
-  await twilioReply("Sorry Sam, I couldn't pull that up right now. Try again in a minute.")
+  await whatsappReply("Sorry Sam, I couldn't pull that up right now. Try again in a minute.")
   return
 }
 
 // Truncate if over 800 chars
 const truncated = answer.length > 800 ? answer.slice(0, 780) + '...' : answer
-await twilioReply(truncated)
+await whatsappReply(truncated)
 // No state change — stays idle
 ```
 
@@ -1572,7 +1572,7 @@ Sam's message: "${message}"`
 const parsed = await callClaudeJSON(systemPrompt, userMessage, 200)
 
 if (parsed === null || parsed.event_date === null) {
-  await twilioReply(
+  await whatsappReply(
     "Got it, I noted an event but couldn't figure out the date.\nDid you mean today or tomorrow?"
   )
   return
@@ -1590,7 +1590,7 @@ await supabase.from('predictions').update({
 await recalculatePredictionsForDate(resolvedDate)
 
 const dateDisplay = toNaturalDate(resolvedDate)
-await twilioReply(
+await whatsappReply(
   `Event flagged ✓\n${dateDisplay}: "${parsed.description}"\n\nI've bumped ${dateDisplay}'s prep suggestions by ${Math.round((multiplier - 1) * 100)}%.\nYou'll see updated numbers in tomorrow's morning prep sheet.`
 )
 ```

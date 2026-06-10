@@ -1,10 +1,8 @@
 const supabase = require('../../services/supabaseClient')
 const { callGeminiJSON, callGemini } = require('../../services/geminiService')
-const { setBotState, todayIST, whatsappReply, fuzzyMatchMenuItem } = require('./helpers')
-const { generatePredictions } = require('../../intelligence/predictions')
-const { formatInTimeZone } = require('date-fns-tz')
-
-const IST = 'Asia/Kolkata'
+const { setBotState, todayIST, tomorrowIST, whatsappReply, fuzzyMatchMenuItem } = require('./helpers')
+const { generatePredictions, detectAnomalies, confirmPredictions } = require('../../intelligence/predictions')
+const { VENDOR_MESSAGE_PROMPT } = require('./prompts')
 
 const schemaG = {
   type: "object",
@@ -40,38 +38,67 @@ Rules:
 - Never invent items Sam did not mention.
 - Sam does not need to mention every item — only report what she explicitly stated.`
 
-const SYSTEM_PROMPT_F = `You are CafeOS, generating a WhatsApp vendor order message on behalf of Sam's Cafe in Goa.
-The message must sound like Sam wrote it herself — natural, conversational, direct.
-The vendor should not know a system generated this.
-Return ONLY the message text — no quotes, no preamble, no label, no explanation, no markdown, no backticks.
-
-Rules:
-- Write in simple, warm Hindi-English mix OR plain English depending on vendor name context.
-  Default to plain English unless vendor name suggests a local contact.
-- List items clearly: item + quantity per line or as a comma-separated list.
-- Include delivery date naturally: "please send tomorrow morning" or "please deliver tomorrow".
-  Never use ISO dates.
-- Keep it under 200 characters if possible. Never exceed 350 characters.
-- Sound like a regular WhatsApp message between two people who know each other.`
-
-function tomorrowIST() {
-  const tomorrow = new Date()
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  return formatInTimeZone(tomorrow, IST, 'yyyy-MM-dd')
-}
-
 async function buildVendorOrderFromPredictions(predictions, menuItems) {
-  // Only items with meaningful predicted quantities
-  const orderItems = predictions
-    .filter(p => p.predicted_qty > 0)
-    .map(p => {
+  const activePredictions = predictions.filter(p => p.predicted_qty > 0)
+  const menuItemIds = activePredictions.map(p => p.menu_item_id)
+
+  // Check whether any recipes are defined for these menu items
+  const { data: recipeRows } = await supabase
+    .from('menu_item_ingredients')
+    .select('menu_item_id, ingredient_id, quantity_per_portion, ingredient_master(id, name, unit, vendor_item_name, cost_per_unit)')
+    .in('menu_item_id', menuItemIds)
+
+  if (!recipeRows || recipeRows.length === 0) {
+    // No recipes yet — fall back to portion-level so the vendor prompt still fires
+    return activePredictions.map(p => {
       const item = menuItems.find(m => m.id === p.menu_item_id)
-      return {
-        name: item?.name || 'Item',
-        qty: p.predicted_qty,
-        unit: 'portions'
-      }
+      return { name: item?.name || 'Item', qty: p.predicted_qty, unit: 'portions' }
     })
+  }
+
+  // Aggregate raw ingredient requirements across all menu items
+  const ingredientNeeds = new Map()
+  for (const pred of activePredictions) {
+    const recipes = recipeRows.filter(r => r.menu_item_id === pred.menu_item_id)
+    for (const recipe of recipes) {
+      const ing = recipe.ingredient_master
+      if (!ing) continue
+      const needed = recipe.quantity_per_portion * pred.predicted_qty
+      if (ingredientNeeds.has(ing.id)) {
+        ingredientNeeds.get(ing.id).qty += needed
+      } else {
+        ingredientNeeds.set(ing.id, {
+          name: ing.vendor_item_name || ing.name,
+          qty: needed,
+          unit: ing.unit,
+          ingredient_id: ing.id,
+          cost_per_unit: ing.cost_per_unit
+        })
+      }
+    }
+  }
+
+  // Subtract what's already in stock
+  const { data: stockLevels } = await supabase
+    .from('inventory_levels')
+    .select('ingredient_id, current_qty')
+
+  const stockMap = new Map((stockLevels || []).map(s => [s.ingredient_id, s.current_qty]))
+
+  const orderItems = []
+  for (const [ingId, need] of ingredientNeeds.entries()) {
+    const stock = stockMap.get(ingId) ?? 0
+    const toOrder = Math.max(0, need.qty - stock)
+    if (toOrder > 0) {
+      orderItems.push({
+        name: need.name,
+        qty: Math.ceil(toOrder * 10) / 10,
+        unit: need.unit,
+        ingredient_id: ingId,
+        cost_per_unit: need.cost_per_unit ?? null
+      })
+    }
+  }
 
   return orderItems
 }
@@ -100,13 +127,12 @@ async function findVendorName() {
 }
 
 async function formatVendorMessage(items, vendorName) {
-  const itemList = items.map(i => `${i.name} ${i.qty}`).join(', ')
-  const userMessage = `Items: ${itemList}\nDelivery: tomorrow morning\nNotes: none`
+  const itemList = items.map(i => `${i.name} ${i.qty}${i.unit ? i.unit : ''}`).join(', ')
+  const userMessage = `Vendor: ${vendorName || 'vendor'}\nItems: ${itemList}\nDelivery: tomorrow morning\nNotes: none`
 
-  const claudeMsg = await callGemini(SYSTEM_PROMPT_F, userMessage, 300, 0.7)
+  const claudeMsg = await callGemini(VENDOR_MESSAGE_PROMPT, userMessage, 300, 0.7)
   if (claudeMsg) return claudeMsg
 
-  // Fallback: deterministic format
   return `${itemList} — please deliver tomorrow morning`
 }
 
@@ -151,10 +177,14 @@ Sam's wastage message: "${message}"`
   } else {
     for (const entry of parsed.items || []) {
       const matchedItem = fuzzyMatchMenuItem(entry.item, menuItems)
+      if (!matchedItem) {
+        console.warn(`[WastageReply] No menu item match for "${entry.item}" — skipping`)
+        continue
+      }
       await supabase
         .from('wastage_logs')
         .upsert({
-          menu_item_id: matchedItem?.id || null,
+          menu_item_id: matchedItem.id,
           item_name: entry.item,
           quantity_left: entry.qty_left,
           logged_at: today
@@ -162,20 +192,54 @@ Sam's wastage message: "${message}"`
     }
   }
 
-  // Generate predictions for tomorrow
+  // Detect anomalies before predicting
+  const wastageMap = new Map()
+  if (parsed.all_clear) {
+    for (const item of menuItems || []) wastageMap.set(item.id, 0)
+  } else {
+    for (const entry of parsed.items || []) {
+      const matchedItem = fuzzyMatchMenuItem(entry.item, menuItems)
+      if (matchedItem) wastageMap.set(matchedItem.id, entry.qty_left)
+    }
+  }
+
+  // Confirm today's predictions now that wastage is written — sets actual_qty = sold + wasted
+  try {
+    await confirmPredictions(today)
+  } catch (err) {
+    console.warn('[WastageReply] confirmPredictions failed:', err.message)
+  }
+
+  const anomalies = await detectAnomalies(today, wastageMap)
+  if (anomalies.length > 0) {
+    const anomalyMsg = anomalies.map(a => a.name).join(', ')
+    await setBotState(phoneNumber, 'awaiting_anomaly_resolution', { anomalies, date: today })
+    await whatsappReply(phoneNumber, `Hey Sam, it looks like consumption for ${anomalyMsg} was unusually high compared to today's sales. Was there any unrecorded wastage or staff meals? (Reply with reason or 'Ignore')`)
+    return
+  }
+
+  await resumePostWastageFlow(phoneNumber)
+}
+
+async function resumePostWastageFlow(phoneNumber) {
+  const { data: menuItems, error: menuErr } = await supabase
+    .from('menu_items')
+    .select('id, name')
+    .eq('active', true)
+  if (menuErr) throw menuErr
+
   const tomorrow = tomorrowIST()
   let tomorrowPredictions
   try {
     const result = await generatePredictions(tomorrow)
     tomorrowPredictions = result.rows
   } catch (err) {
-    console.error('[WastageReply] Failed to generate tomorrow predictions:', err)
+    console.error('[WastageFlow] Failed to generate tomorrow predictions:', err)
     await setBotState(phoneNumber, 'idle', null)
     await whatsappReply(phoneNumber, 'Wastage logged ✓ Thanks Sam!')
     return
   }
 
-  // Build vendor order from predictions
   const orderItems = await buildVendorOrderFromPredictions(tomorrowPredictions, menuItems)
   if (orderItems.length === 0) {
     await setBotState(phoneNumber, 'idle', null)
@@ -201,3 +265,4 @@ Sam's wastage message: "${message}"`
 }
 
 module.exports = handleWastageReply
+module.exports.resumePostWastageFlow = resumePostWastageFlow

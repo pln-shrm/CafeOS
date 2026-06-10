@@ -78,26 +78,30 @@ async function createOrderFromBody(body, staffId) {
   }
 
   const billDate = todayIST()
-  const billNumber = await getNextBillNumber(billDate)
 
   const total = items.reduce((sum, item) => {
     return sum + menuMap[item.menu_item_id].price * Number(item.quantity)
   }, 0)
 
-  // Insert order
-  const { data: order, error: orderErr } = await supabase
-    .from('orders')
-    .insert({
-      local_uuid,
-      order_type,
-      payment_method,
-      total,
-      bill_number: billNumber,
-      bill_date: billDate,
-      staff_id: staffId
-    })
-    .select()
-    .single()
+  // Insert order — retry up to 3 times on bill_number collision (race condition guard)
+  let order, orderErr
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const billNumber = await getNextBillNumber(billDate)
+    ;({ data: order, error: orderErr } = await supabase
+      .from('orders')
+      .insert({
+        local_uuid,
+        order_type,
+        payment_method,
+        total,
+        bill_number: billNumber,
+        bill_date: billDate,
+        staff_id: staffId
+      })
+      .select()
+      .single())
+    if (!orderErr || orderErr.code !== '23505') break
+  }
 
   if (orderErr) {
     // Unique constraint on local_uuid: someone beat us to it — fetch and return existing
@@ -245,6 +249,36 @@ router.get('/:id/bill', anyAuthMiddleware, async (req, res) => {
     total: order.total,
     footer: "Thank you for visiting Sam's Cafe!"
   })
+})
+
+// PATCH /api/orders/:id/payment
+router.patch('/:id/payment', anyAuthMiddleware, async (req, res) => {
+  const { payment_method } = req.body
+  const { id } = req.params
+
+  if (!VALID_PAYMENT_METHODS.includes(payment_method)) {
+    return fail(res, 'VALIDATION_ERROR', `payment_method must be one of: ${VALID_PAYMENT_METHODS.join(', ')}`, 400)
+  }
+
+  const { data: existing, error: getErr } = await supabase
+    .from('orders')
+    .select('id, payment_method')
+    .eq('id', id)
+    .maybeSingle()
+
+  if (getErr) throw getErr
+  if (!existing) return fail(res, 'NOT_FOUND', 'Order not found', 404)
+
+  const { data: order, error: updateErr } = await supabase
+    .from('orders')
+    .update({ payment_method })
+    .eq('id', id)
+    .select('id, bill_number, bill_date, total, payment_method')
+    .single()
+
+  if (updateErr) throw updateErr
+
+  return ok(res, { order })
 })
 
 // POST /api/orders/sync

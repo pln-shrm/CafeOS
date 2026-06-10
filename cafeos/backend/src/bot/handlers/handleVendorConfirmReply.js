@@ -1,20 +1,7 @@
 const supabase = require('../../services/supabaseClient')
 const { callGemini } = require('../../services/geminiService')
 const { setBotState, whatsappReply } = require('./helpers')
-
-const SYSTEM_PROMPT_F = `You are CafeOS, generating a WhatsApp vendor order message on behalf of Sam's Cafe in Goa.
-The message must sound like Sam wrote it herself — natural, conversational, direct.
-The vendor should not know a system generated this.
-Return ONLY the message text — no quotes, no preamble, no label, no explanation, no markdown, no backticks.
-
-Rules:
-- Write in simple, warm Hindi-English mix OR plain English depending on vendor name context.
-  Default to plain English unless vendor name suggests a local contact.
-- List items clearly: item + quantity per line or as a comma-separated list.
-- Include delivery date naturally: "please send tomorrow morning" or "please deliver tomorrow".
-  Never use ISO dates.
-- Keep it under 200 characters if possible. Never exceed 350 characters.
-- Sound like a regular WhatsApp message between two people who know each other.`
+const { VENDOR_MESSAGE_PROMPT } = require('./prompts')
 
 async function buildForwardableMessage(items, vendorName) {
   const itemList = (items || [])
@@ -24,8 +11,8 @@ async function buildForwardableMessage(items, vendorName) {
 
   if (!itemList) return null
 
-  const userMessage = `Items: ${itemList}\nDelivery: tomorrow morning\nNotes: none`
-  const claudeMsg = await callGemini(SYSTEM_PROMPT_F, userMessage, 300, 0.7)
+  const userMessage = `Vendor: ${vendorName || 'vendor'}\nItems: ${itemList}\nDelivery: tomorrow morning\nNotes: none`
+  const claudeMsg = await callGemini(VENDOR_MESSAGE_PROMPT, userMessage, 300, 0.7)
   if (claudeMsg) return claudeMsg
 
   // Fallback
@@ -37,18 +24,41 @@ async function handleVendorConfirmReply(phoneNumber, message, context) {
   const vendorName = context?.vendor_name
 
   if (['1', 'ok', 'haan', 'yes'].includes(text)) {
-    // Build the final forwardable message with Prompt F
     const formattedMessage = await buildForwardableMessage(context?.items, vendorName)
       || context?.formatted_message
       || 'Order placed — please deliver tomorrow morning.'
+
+    const items = context?.items || []
+
+    // Calculate total cost if all items have cost_per_unit (set by recipe-based ordering)
+    let totalCost = null
+    const allPriced = items.length > 0 && items.every(i => i.cost_per_unit != null)
+    if (allPriced) {
+      totalCost = Math.round(
+        items.reduce((sum, i) => sum + Number(i.cost_per_unit) * Number(i.qty ?? i.quantity ?? 0), 0) * 100
+      ) / 100
+    }
 
     await supabase
       .from('procurement')
       .insert({
         vendor_name: vendorName || 'vendor',
-        items_json: context?.items || [],
+        items_json: items,
+        total_cost: totalCost,
         status: 'pending_delivery'
       })
+
+    // Auto-log vendor credit when cost is known
+    if (totalCost && totalCost > 0 && vendorName) {
+      const description = items.map(i => `${i.name} ${i.qty ?? i.quantity ?? ''}${i.unit || ''}`).join(', ')
+      await supabase.from('vendor_credit').insert({
+        vendor_name: vendorName,
+        type: 'credit',
+        amount: totalCost,
+        item_description: `Auto: ${description}`,
+        settled: false
+      })
+    }
 
     await setBotState(phoneNumber, 'idle', null)
 

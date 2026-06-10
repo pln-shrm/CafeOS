@@ -19,6 +19,17 @@ function dowOf(dateStr) {
   return new Date(dateStr + 'T12:00:00Z').getUTCDay()
 }
 
+function parseStockoutHour(timeStr) {
+  if (!timeStr) return null
+  const m = timeStr.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i)
+  if (!m) return null
+  let hour = parseInt(m[1], 10)
+  const ampm = m[3]?.toLowerCase()
+  if (ampm === 'pm' && hour < 12) hour += 12
+  if (ampm === 'am' && hour === 12) hour = 0
+  return hour >= 0 && hour <= 23 ? hour : null
+}
+
 async function fetchWeather() {
   try {
     const res = await axios.get('https://api.open-meteo.com/v1/forecast', {
@@ -126,7 +137,7 @@ async function generatePredictions(date) {
 
       // Step 4: EWMA (α=0.3) over last 7 days
       const last7 = history.slice(-7)
-      let ewma = item.seed_qty
+      let ewma = item.seed_qty ?? dowAvg
       for (const h of last7) {
         ewma = 0.3 * h.actual_qty + 0.7 * ewma
       }
@@ -151,12 +162,21 @@ async function generatePredictions(date) {
 
     let qty = baseline * weatherMult * festivalMultiplier
 
-    // Stockout signal: yesterday this item ran out → bump +20%
-    const wasStockout = stockouts.some(s => {
+    // Stockout signal: scale bump by how early the item ran out
+    // Early stockout = more unmet demand = larger bump
+    const stockout = stockouts.find(s => {
       const sItem = (s.item || '').toLowerCase()
       return sItem && (lowName.includes(sItem) || sItem.includes(lowName.split(' ')[0]))
     })
-    if (wasStockout) qty *= 1.20
+    if (stockout) {
+      let stockoutBump = 1.20
+      const hour = parseStockoutHour(stockout.time)
+      if (hour !== null) {
+        if (hour < 12) stockoutBump = 1.40      // before noon — hours of unmet demand
+        else if (hour < 15) stockoutBump = 1.30  // early afternoon
+      }
+      qty *= stockoutBump
+    }
 
     // Wastage signal: qty_left > 3 → reduce by surplus × 0.5
     const qtyLeft = wastageMap.get(item.id) ?? 0
@@ -210,6 +230,18 @@ async function confirmPredictions(date) {
     }
   }
 
+  // Add wastage so actual_qty = sold + leftover (true amount cooked)
+  const { data: wastageRows } = await supabase
+    .from('wastage_logs')
+    .select('menu_item_id, quantity_left')
+    .eq('logged_at', date)
+    .not('menu_item_id', 'is', null)
+
+  const wastageMap = new Map()
+  for (const row of wastageRows || []) {
+    wastageMap.set(row.menu_item_id, row.quantity_left)
+  }
+
   // Fetch all predictions for the date to get menu_item_ids
   const { data: predictions } = await supabase
     .from('predictions')
@@ -221,7 +253,7 @@ async function confirmPredictions(date) {
       .from('predictions')
       .update({
         confirmed: true,
-        actual_qty: soldMap.get(pred.menu_item_id) ?? 0
+        actual_qty: (soldMap.get(pred.menu_item_id) ?? 0) + (wastageMap.get(pred.menu_item_id) ?? 0)
       })
       .eq('id', pred.id)
   )
@@ -230,4 +262,44 @@ async function confirmPredictions(date) {
   console.log(`[Predictions] Confirmed ${updates.length} predictions for ${date}`)
 }
 
-module.exports = { generatePredictions, confirmPredictions }
+async function detectAnomalies(date, wastageMap) {
+  const { data: todayOrders } = await supabase
+    .from('orders')
+    .select('id')
+    .eq('bill_date', date)
+
+  const orderIds = (todayOrders || []).map(o => o.id)
+  const soldMap = new Map()
+  if (orderIds.length > 0) {
+    const { data: items } = await supabase
+      .from('order_items')
+      .select('menu_item_id, quantity')
+      .in('order_id', orderIds)
+    for (const row of items || []) {
+      soldMap.set(row.menu_item_id, (soldMap.get(row.menu_item_id) || 0) + row.quantity)
+    }
+  }
+
+  const { data: menuItems } = await supabase.from('menu_items').select('id, name')
+  const nameMap = new Map((menuItems || []).map(i => [i.id, i.name]))
+
+  const anomalies = []
+  
+  for (const [itemId, wastageQty] of wastageMap.entries()) {
+    const soldQty = soldMap.get(itemId) || 0
+    // Flag items where wastage is unusually high relative to what was sold.
+    // Threshold: wastage > 40% of sales AND at least 3 portions — likely over-prep or unrecorded use.
+    if (wastageQty >= 3 && soldQty > 0 && wastageQty / soldQty > 0.4) {
+      anomalies.push({
+        item_id: itemId,
+        name: nameMap.get(itemId) || 'Unknown Item',
+        wastage: wastageQty,
+        sold: soldQty
+      })
+    }
+  }
+
+  return anomalies
+}
+
+module.exports = { generatePredictions, confirmPredictions, detectAnomalies }

@@ -151,10 +151,7 @@ async function handleVoiceCheckin(phoneNumber, mediaUrl, today) {
     try {
       const audioRes = await axios.get(mediaUrl, {
         responseType: 'arraybuffer',
-        auth: {
-          username: process.env.TWILIO_ACCOUNT_SID,
-          password: process.env.TWILIO_AUTH_TOKEN
-        },
+        headers: { Authorization: `Bearer ${process.env.META_ACCESS_TOKEN}` },
         timeout: 10000
       })
       const base64Audio = Buffer.from(audioRes.data).toString('base64')
