@@ -66,6 +66,7 @@ export default function LoginPage() {
     setLoading(true)
     setLoginError('')
     try {
+      await supabase.auth.signOut() // Sign out of any active owner session
       const res = await api.post('/api/auth/staff/login', {
         staff_id: selectedStaff.id,
         pin
@@ -89,6 +90,9 @@ export default function LoginPage() {
     setOwnerLoading(true)
     setOwnerError('')
     try {
+      localStorage.removeItem(STAFF_TOKEN_KEY)
+      localStorage.removeItem(STAFF_INFO_KEY)
+      localStorage.removeItem(LOGIN_TS_KEY)
       const { error } = await supabase.auth.signInWithPassword({ email: ownerEmail, password: ownerPassword })
       if (error) throw error
       navigate('/owner/home', { replace: true })
