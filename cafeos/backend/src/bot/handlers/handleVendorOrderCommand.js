@@ -1,4 +1,4 @@
-const { parseVendorItems, setBotState, whatsappReply } = require('./helpers')
+const { parseVendorItems, setBotState, whatsappReply, whatsappButtons } = require('./helpers')
 
 function extractVendorName(message) {
   const arrowSplit = message.split('→')
@@ -15,7 +15,7 @@ function buildVendorMessage(items) {
 
 async function handleVendorOrderCommand(phoneNumber, message) {
   const vendorName = extractVendorName(message)
-  const itemText = message.split('→')[0].split('->')[0]
+  const itemText = message.split('→')[0].split('->')[0].replace(/^\s*order\s+/i, '')
   const items = await parseVendorItems(itemText)
 
   if (items.length === 0) {
@@ -36,9 +36,13 @@ async function handleVendorOrderCommand(phoneNumber, message) {
     formatted_message: formattedMessage
   })
 
-  await whatsappReply(
+  await whatsappButtons(
     phoneNumber,
-    `Logged ✓\n\nReady to send to ${vendorName}:\n\n"${formattedMessage}"\n\nForward this to place the order.\nReply 2 to edit.`
+    `Logged ✓\n\nReady to send to ${vendorName}:\n\n"${formattedMessage}"`,
+    [
+      { id: '1', title: 'Confirm ✅' },
+      { id: '2', title: 'Edit ✏️' }
+    ]
   )
 }
 

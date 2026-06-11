@@ -17,7 +17,7 @@ async function callGemini(systemPrompt, userContent, maxTokens = 500, temperatur
     }
 
     const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
+      model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
       contents: userContent,
       config
     });

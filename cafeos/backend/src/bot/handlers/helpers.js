@@ -1,6 +1,6 @@
 const { formatInTimeZone } = require('date-fns-tz')
 const supabase = require('../../services/supabaseClient')
-const { whatsappReply } = require('../../services/whatsappClient')
+const { whatsappReply, whatsappButtons } = require('../../services/whatsappClient')
 
 const IST = 'Asia/Kolkata'
 
@@ -85,20 +85,32 @@ async function incrementInventoryLevels(items) {
 
     if (!ingredientId) continue
 
-    const { data: existing } = await supabase
-      .from('inventory_levels')
-      .select('current_qty')
-      .eq('ingredient_id', ingredientId)
-      .maybeSingle()
-
-    await supabase
-      .from('inventory_levels')
-      .upsert({
-        ingredient_id: ingredientId,
-        current_qty: (existing?.current_qty ?? 0) + qty,
-        last_updated: new Date().toISOString()
-      }, { onConflict: 'ingredient_id' })
+    await adjustInventory(ingredientId, qty)
   }
+}
+
+// Atomic stock adjustment (positive = delivery, negative = consumption).
+// Falls back to read-then-upsert if the increment_inventory RPC isn't deployed yet.
+async function adjustInventory(ingredientId, delta) {
+  const { error: rpcErr } = await supabase.rpc('increment_inventory', {
+    p_ingredient_id: ingredientId,
+    p_qty: delta
+  })
+  if (!rpcErr) return
+
+  const { data: existing } = await supabase
+    .from('inventory_levels')
+    .select('current_qty')
+    .eq('ingredient_id', ingredientId)
+    .maybeSingle()
+
+  await supabase
+    .from('inventory_levels')
+    .upsert({
+      ingredient_id: ingredientId,
+      current_qty: Math.max(0, (existing?.current_qty ?? 0) + delta),
+      last_updated: new Date().toISOString()
+    }, { onConflict: 'ingredient_id' })
 }
 
 // Levenshtein distance for fuzzy name matching
@@ -149,6 +161,7 @@ function fuzzyMatchMenuItem(searchName, menuItems) {
 
 module.exports = {
   whatsappReply,
+  whatsappButtons,
   todayIST,
   tomorrowIST,
   formatRupees,
@@ -156,5 +169,6 @@ module.exports = {
   setBotState,
   parseVendorItems,
   fuzzyMatchMenuItem,
-  incrementInventoryLevels
+  incrementInventoryLevels,
+  adjustInventory
 }

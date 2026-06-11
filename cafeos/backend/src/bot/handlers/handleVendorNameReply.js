@@ -1,4 +1,4 @@
-const { setBotState, whatsappReply } = require('./helpers')
+const { setBotState, whatsappButtons } = require('./helpers')
 
 function buildVendorMessage(items) {
   const list = items.map(item => `${item.name} ${item.qty}${item.unit || ''}`)
@@ -16,9 +16,13 @@ async function handleVendorNameReply(phoneNumber, message, context) {
     formatted_message: formattedMessage
   })
 
-  await whatsappReply(
+  await whatsappButtons(
     phoneNumber,
-    `Logged ✓\n\nReady to send to ${vendorName}:\n\n"${formattedMessage}"\n\nForward this to place the order.\nReply 2 to edit.`
+    `Logged ✓\n\nReady to send to ${vendorName}:\n\n"${formattedMessage}"`,
+    [
+      { id: '1', title: 'Confirm ✅' },
+      { id: '2', title: 'Edit ✏️' }
+    ]
   )
 }
 

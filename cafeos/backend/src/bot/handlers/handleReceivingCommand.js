@@ -1,5 +1,5 @@
 const supabase = require('../../services/supabaseClient')
-const { setBotState, whatsappReply } = require('./helpers')
+const { setBotState, whatsappReply, whatsappButtons } = require('./helpers')
 
 async function handleReceivingCommand(phoneNumber, message) {
   // Try to find the most recent pending delivery
@@ -32,9 +32,13 @@ async function handleReceivingCommand(phoneNumber, message) {
     items: items
   })
 
-  await whatsappReply(
+  await whatsappButtons(
     phoneNumber,
-    `Did you receive the following from ${vendorName}?\n\n${itemList}\n\nReply 1 to confirm everything arrived, or 2 to edit (if items are missing).`
+    `Did you receive the following from ${vendorName}?\n\n${itemList}`,
+    [
+      { id: '1', title: 'All arrived ✅' },
+      { id: '2', title: "Something's off ✏️" }
+    ]
   )
 }
 

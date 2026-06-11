@@ -18,8 +18,9 @@ async function getBalance(vendorName) {
 }
 
 async function handleCreditCommand(phoneNumber, message) {
-  const creditMatch = message.match(/credit\s+([\w\s]+)\s+₹?(\d+)/i)
-  const paidMatch = message.match(/paid\s+([\w\s]+)\s+₹?(\d+)/i)
+  // Amount accepts commas and decimals: ₹4,500 / 4500 / 450.50
+  const creditMatch = message.match(/credit\s+(.+?)\s+₹?\s*([\d,]+(?:\.\d+)?)/i)
+  const paidMatch = message.match(/paid\s+(.+?)\s+₹?\s*([\d,]+(?:\.\d+)?)/i)
 
   let vendorName
   let amount
@@ -27,15 +28,15 @@ async function handleCreditCommand(phoneNumber, message) {
 
   if (creditMatch) {
     vendorName = creditMatch[1].trim()
-    amount = Number(creditMatch[2])
+    amount = Number(creditMatch[2].replace(/,/g, ''))
     type = 'credit'
   } else if (paidMatch) {
     vendorName = paidMatch[1].trim()
-    amount = Number(paidMatch[2])
+    amount = Number(paidMatch[2].replace(/,/g, ''))
     type = 'payment'
   }
 
-  if (!vendorName || !amount) {
+  if (!vendorName || !amount || Number.isNaN(amount)) {
     await whatsappReply(phoneNumber, "Try: 'credit Rice Vendor ₹4500' or 'paid Meat Vendor ₹2400'")
     return
   }

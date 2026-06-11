@@ -1,10 +1,12 @@
 const cron = require('node-cron')
 const axios = require('axios')
 const supabase = require('../services/supabaseClient')
-const { whatsappReply } = require('../services/whatsappClient')
+const { whatsappReply, whatsappButtons } = require('../services/whatsappClient')
 const { callGemini } = require('../services/geminiService')
-const { setBotState, todayIST } = require('../bot/handlers/helpers')
-const { generatePredictions } = require('../intelligence/predictions')
+const { formatInTimeZone } = require('date-fns-tz')
+const { setBotState, todayIST, formatRupees } = require('../bot/handlers/helpers')
+const { generatePredictions, confirmPredictions } = require('../intelligence/predictions')
+const { resumePostWastageFlow } = require('../bot/handlers/handleWastageReply')
 
 const IST = { timezone: 'Asia/Kolkata' }
 
@@ -25,10 +27,8 @@ Rules:
 - Include a festival line ONLY if festivalFlag is not "none".
   Format: "[Festival name] is active — I've bumped today's suggestions."
   DO NOT include if festivalFlag is null or "none".
-- End the message with exactly these two lines:
-  "Reply 1 to go with this"
-  "Or tell me what you're changing (e.g. 'biryani 25, fish curry 10')"
-- Total message must be under 1,500 characters.
+- Do NOT include any reply instructions, numbered options, or questions at the end — the app shows tap buttons separately.
+- Total message must be under 950 characters.
 - Never add commentary about predictions, confidence, or data. Just the numbers and context.`
 
 async function fetchWeatherNote() {
@@ -147,13 +147,16 @@ Date: ${formattedDate}`
     // Deterministic fallback
     const itemsList = contextPredictions.map(p => `• ${p.item_name} — ${p.predicted_qty}`)
     const weatherBlock = weatherNote ? `\n\n${weatherNote}` : ''
-    messageText = `Good morning Sam! Here's today's prep 🍽️\n\n${itemsList.join('\n')}${weatherBlock}\n\nReply 1 to go with this\nOr tell me what you're changing (e.g. 'biryani 25, fish curry 10')`
+    messageText = `Good morning Sam! Here's today's prep 🍽️\n\n${itemsList.join('\n')}${weatherBlock}`
   }
 
-  // Enforce character limit
-  if (messageText.length > 1500) messageText = messageText.slice(0, 1480) + '...'
+  // Enforce character limit (interactive body max is 1024)
+  if (messageText.length > 1000) messageText = messageText.slice(0, 980) + '...'
 
-  await whatsappReply(process.env.SAM_WHATSAPP_TO, messageText)
+  await whatsappButtons(process.env.SAM_WHATSAPP_TO, messageText, [
+    { id: '1', title: 'Go with this ✅' },
+    { id: '2', title: 'Make changes ✏️' }
+  ])
   await setBotState(process.env.SAM_WHATSAPP_TO, 'awaiting_prep_confirm', {
     date: today,
     predictions: contextPredictions
@@ -168,9 +171,13 @@ async function runPrepFollowupJob() {
     .maybeSingle()
 
   if (state.data?.current_state === 'awaiting_prep_confirm') {
-    await whatsappReply(
+    await whatsappButtons(
       process.env.SAM_WHATSAPP_TO,
-      "Hi Sam! Just checking — did you see today's prep sheet?\nReply 1 to confirm or tell me your changes."
+      "Hi Sam! Just checking — did you see today's prep sheet?\nYou can also just type your changes (e.g. 'biryani 25').",
+      [
+        { id: '1', title: 'Go with it ✅' },
+        { id: '2', title: 'Make changes ✏️' }
+      ]
     )
   }
 }
@@ -240,6 +247,112 @@ async function runWastagePromptJob() {
   )
 }
 
+// If Sam never replied to the 10pm wastage prompt, proceed anyway:
+// confirm today's predictions from sales alone (leftover unknown = 0),
+// deduct today's ingredient usage, and continue the stock/vendor-order flow.
+async function runWastageAutoProceedJob() {
+  const today = todayIST()
+  const { data: state } = await supabase
+    .from('bot_state')
+    .select('current_state')
+    .eq('phone_number', process.env.SAM_WHATSAPP_TO)
+    .maybeSingle()
+
+  if (state?.current_state !== 'awaiting_wastage') return
+
+  try {
+    await confirmPredictions(today)
+  } catch (err) {
+    console.warn('[CRON] Auto-proceed confirmPredictions failed:', err.message)
+  }
+
+  await resumePostWastageFlow(
+    process.env.SAM_WHATSAPP_TO,
+    "No wastage reply — I'll assume everything sold today ✓"
+  )
+}
+
+function daysAgoIST(n) {
+  return formatInTimeZone(new Date(Date.now() - n * 86400000), 'Asia/Kolkata', 'yyyy-MM-dd')
+}
+
+const SYSTEM_PROMPT_WEEKLY = `You are CafeOS, a friendly assistant for Sam's Cafe in Goa.
+Turn the facts below into Sam's weekly summary WhatsApp message.
+Warm, plain English. Short lines. Format rupees as ₹X,XXX.
+Open exactly with: "Hi Sam! Here's your week 📊"
+Keep it under 1,000 characters. No markdown, no backticks, no commentary — just the summary.
+Do not invent numbers not present in the facts.`
+
+async function runWeeklySummaryJob() {
+  const today = todayIST()
+  const weekStart = daysAgoIST(6)
+
+  const { data: orders } = await supabase
+    .from('orders')
+    .select('id, total, payment_method')
+    .gte('bill_date', weekStart)
+    .lte('bill_date', today)
+
+  if (!orders || orders.length === 0) {
+    await whatsappReply(process.env.SAM_WHATSAPP_TO, 'Hi Sam! No orders were logged this week — nothing to summarise 📊')
+    return
+  }
+
+  const revenue = orders.reduce((s, o) => s + Number(o.total || 0), 0)
+
+  // Top-selling items
+  const orderIds = orders.map(o => o.id)
+  const { data: orderItems } = await supabase
+    .from('order_items')
+    .select('menu_item_id, quantity')
+    .in('order_id', orderIds)
+
+  const soldMap = new Map()
+  for (const row of orderItems || []) {
+    soldMap.set(row.menu_item_id, (soldMap.get(row.menu_item_id) || 0) + Number(row.quantity))
+  }
+  const { data: menuItems } = await supabase.from('menu_items').select('id, name')
+  const nameMap = new Map((menuItems || []).map(i => [i.id, i.name]))
+  const topItems = [...soldMap.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([id, qty]) => `${nameMap.get(id) || 'Item'} (${qty} sold)`)
+
+  // Wastage this week
+  const { data: wastage } = await supabase
+    .from('wastage_logs')
+    .select('quantity_left')
+    .gte('logged_at', weekStart)
+    .lte('logged_at', today)
+  const totalWaste = (wastage || []).reduce((s, w) => s + Number(w.quantity_left || 0), 0)
+
+  // Outstanding vendor balances
+  const { data: credits } = await supabase
+    .from('vendor_credit')
+    .select('vendor_name, amount, type')
+  const balances = new Map()
+  for (const c of credits || []) {
+    const delta = c.type === 'credit' ? Number(c.amount) : -Number(c.amount)
+    balances.set(c.vendor_name, (balances.get(c.vendor_name) || 0) + delta)
+  }
+  const owed = [...balances.entries()].filter(([, amt]) => amt > 0)
+  const owedTotal = owed.reduce((s, [, amt]) => s + amt, 0)
+
+  const facts = `Week: ${weekStart} to ${today}
+Orders: ${orders.length}
+Revenue: ${formatRupees(revenue)}
+Top sellers: ${topItems.join(', ') || 'none'}
+Total portions wasted: ${totalWaste}
+Outstanding vendor credit: ${formatRupees(owedTotal)}${owed.length ? ` (${owed.map(([v, a]) => `${v} ${formatRupees(a)}`).join(', ')})` : ''}`
+
+  let messageText = await callGemini(SYSTEM_PROMPT_WEEKLY, facts, 500, 0.5)
+  if (!messageText) {
+    messageText = `Hi Sam! Here's your week 📊\n\n${facts}`
+  }
+
+  await whatsappReply(process.env.SAM_WHATSAPP_TO, messageText)
+}
+
 // 8:00 AM Tue–Sun
 cron.schedule('0 8 * * 2-7', () => {
   console.log(`[CRON] MORNING_PREP_SHEET fired at ${new Date().toISOString()}`)
@@ -270,14 +383,16 @@ cron.schedule('0 22 * * 0,2-7', () => {
   runWastagePromptJob().catch(err => console.error('[CRON] WASTAGE_PROMPT failed', err))
 }, IST)
 
-// 10:15 PM Tue–Sun + Sunday
-cron.schedule('15 22 * * 0,2-7', () => {
+// 10:45 PM Tue–Sun + Sunday — proceed if Sam didn't reply to the wastage prompt
+cron.schedule('45 22 * * 0,2-7', () => {
   console.log(`[CRON] WASTAGE_AUTOPROCEED fired at ${new Date().toISOString()}`)
+  runWastageAutoProceedJob().catch(err => console.error('[CRON] WASTAGE_AUTOPROCEED failed', err))
 }, IST)
 
 // 9:00 PM Sunday
 cron.schedule('0 21 * * 0', () => {
   console.log(`[CRON] WEEKLY_SUMMARY fired at ${new Date().toISOString()}`)
+  runWeeklySummaryJob().catch(err => console.error('[CRON] WEEKLY_SUMMARY failed', err))
 }, IST)
 
 // 11:00 PM Daily
@@ -292,5 +407,7 @@ module.exports = {
   runPrepFollowupJob,
   runPrepAutoConfirmJob,
   runEveningCheckinJob,
-  runWastagePromptJob
+  runWastagePromptJob,
+  runWastageAutoProceedJob,
+  runWeeklySummaryJob
 }

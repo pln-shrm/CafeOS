@@ -1,6 +1,6 @@
 const supabase = require('../../services/supabaseClient')
 const { callGemini } = require('../../services/geminiService')
-const { setBotState, whatsappReply } = require('./helpers')
+const { setBotState, whatsappReply, whatsappButtons } = require('./helpers')
 const { VENDOR_MESSAGE_PROMPT } = require('./prompts')
 
 async function buildForwardableMessage(items, vendorName) {
@@ -24,8 +24,9 @@ async function handleVendorConfirmReply(phoneNumber, message, context) {
   const vendorName = context?.vendor_name
 
   if (['1', 'ok', 'haan', 'yes'].includes(text)) {
-    const formattedMessage = await buildForwardableMessage(context?.items, vendorName)
-      || context?.formatted_message
+    // Send exactly what Sam confirmed — only generate fresh if context lost it
+    const formattedMessage = context?.formatted_message
+      || await buildForwardableMessage(context?.items, vendorName)
       || 'Order placed — please deliver tomorrow morning.'
 
     const items = context?.items || []
@@ -76,7 +77,10 @@ async function handleVendorConfirmReply(phoneNumber, message, context) {
     return
   }
 
-  await whatsappReply(phoneNumber, 'Reply 1 to confirm or 2 to edit.')
+  await whatsappButtons(phoneNumber, 'What would you like to do with this order?', [
+    { id: '1', title: 'Confirm ✅' },
+    { id: '2', title: 'Edit ✏️' }
+  ])
 }
 
 module.exports = handleVendorConfirmReply

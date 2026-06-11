@@ -26,6 +26,7 @@ const handleReceivingCommand = require('./handlers/handleReceivingCommand')
 const handleReceivingConfirmReply = require('./handlers/handleReceivingConfirmReply')
 const handleReceivingEditReply = require('./handlers/handleReceivingEditReply')
 const handleAnomalyResolutionReply = require('./handlers/handleAnomalyResolutionReply')
+const handleStockConfirmReply = require('./handlers/handleStockConfirmReply')
 
 const router = Router()
 
@@ -82,6 +83,9 @@ async function routeMessage({ phoneNumber, message, isVoiceNote, mediaUrl }) {
     case 'awaiting_anomaly_resolution':
       await handleAnomalyResolutionReply(phoneNumber, trimmed, stateRow.context_json)
       return
+    case 'awaiting_stock_confirm':
+      await handleStockConfirmReply(phoneNumber, trimmed, stateRow.context_json)
+      return
     default:
       break
   }
@@ -101,6 +105,12 @@ async function routeMessage({ phoneNumber, message, isVoiceNote, mediaUrl }) {
     return
   }
 
+  // owe/balance before summary so "what do I owe today" isn't swallowed by "today"
+  if (lowered.includes('owe') || lowered.includes('balance')) {
+    await handleBalanceQuery(phoneNumber, trimmed)
+    return
+  }
+
   if (lowered.includes('summary') || lowered.includes('aaj') || lowered.includes('today')) {
     await handleSummaryQuery(phoneNumber)
     return
@@ -111,17 +121,12 @@ async function routeMessage({ phoneNumber, message, isVoiceNote, mediaUrl }) {
     return
   }
 
-  if (lowered.includes('owe') || lowered.includes('balance')) {
-    await handleBalanceQuery(phoneNumber, trimmed)
-    return
-  }
-
   if (lowered.includes('event')) {
-    await handleEventFlag(phoneNumber)
+    await handleEventFlag(phoneNumber, trimmed)
     return
   }
 
-  await handleFallback(phoneNumber)
+  await handleFallback(phoneNumber, trimmed)
 }
 
 router.get('/', (req, res) => {
@@ -164,42 +169,28 @@ router.post('/', async (req, res) => {
     return res.sendStatus(404)
   }
 
-  if (
-    body.entry &&
-    body.entry[0].changes &&
-    body.entry[0].changes[0] &&
-    body.entry[0].changes[0].value.messages &&
-    body.entry[0].changes[0].value.messages[0]
-  ) {
-    const messageInfo = body.entry[0].changes[0].value.messages[0]
+  const messageInfo = body.entry?.[0]?.changes?.[0]?.value?.messages?.[0]
+  if (messageInfo) {
     const MessageSid = messageInfo.id
     const From = messageInfo.from
-    const Body = messageInfo.text?.body || ''
+    // Button/list taps arrive as type "interactive" — route the tapped option's id
+    // as the message body so handlers see the same '1'/'2' they expect from text.
+    const interactiveReply = messageInfo.interactive?.button_reply || messageInfo.interactive?.list_reply
+    const Body = interactiveReply?.id || messageInfo.text?.body || ''
     const isAudio = messageInfo.type === 'audio'
     const audioMediaId = isAudio ? messageInfo.audio?.id : null
 
-    const { data: existing, error: dedupeErr } = await supabase
-      .from('processed_webhooks')
-      .select('message_sid')
-      .eq('message_sid', MessageSid)
-      .maybeSingle()
-
-    if (dedupeErr) {
-      console.error('[Webhook] Dedup check failed', dedupeErr)
-      return res.status(200).send('OK') // fail-safe: don't process if we can't deduplicate
-    }
-
-    if (existing) {
-      return res.status(200).send('OK')
-    }
-
+    // Atomic dedupe: insert and let the unique constraint reject retries.
+    // Avoids the select-then-insert race when Meta delivers the same message twice concurrently.
     const { error: insertErr } = await supabase
       .from('processed_webhooks')
       .insert({ message_sid: MessageSid })
 
     if (insertErr) {
-      console.error('[Webhook] Dedup insert failed', insertErr)
-      return res.status(200).send('OK') // can't guarantee dedup — bail out safely
+      if (insertErr.code !== '23505') {
+        console.error('[Webhook] Dedup insert failed', insertErr)
+      }
+      return res.status(200).send('OK') // duplicate or can't guarantee dedup — bail out safely
     }
 
     console.log(`[DEBUG] Incoming from: "${From}", Expected: "${process.env.SAM_WHATSAPP_TO}"`)

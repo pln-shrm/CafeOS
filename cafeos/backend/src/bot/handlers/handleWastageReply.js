@@ -1,7 +1,8 @@
 const supabase = require('../../services/supabaseClient')
 const { callGeminiJSON, callGemini } = require('../../services/geminiService')
-const { setBotState, todayIST, tomorrowIST, whatsappReply, fuzzyMatchMenuItem } = require('./helpers')
+const { setBotState, todayIST, tomorrowIST, whatsappReply, whatsappButtons, fuzzyMatchMenuItem } = require('./helpers')
 const { generatePredictions, detectAnomalies, confirmPredictions } = require('../../intelligence/predictions')
+const { applyDailyConsumption, estimateRemainingStock } = require('../../intelligence/inventory')
 const { VENDOR_MESSAGE_PROMPT } = require('./prompts')
 
 const schemaG = {
@@ -214,14 +215,65 @@ Sam's wastage message: "${message}"`
   if (anomalies.length > 0) {
     const anomalyMsg = anomalies.map(a => a.name).join(', ')
     await setBotState(phoneNumber, 'awaiting_anomaly_resolution', { anomalies, date: today })
-    await whatsappReply(phoneNumber, `Hey Sam, it looks like consumption for ${anomalyMsg} was unusually high compared to today's sales. Was there any unrecorded wastage or staff meals? (Reply with reason or 'Ignore')`)
+    await whatsappButtons(
+      phoneNumber,
+      `Hey Sam, leftover for ${anomalyMsg} looks unusually high compared to today's sales. Was there unrecorded wastage or staff meals? (Tap an option or type the reason)`,
+      [
+        { id: 'Staff meals', title: 'Staff meals 🍽️' },
+        { id: 'Unrecorded wastage', title: 'Wastage 🗑️' },
+        { id: 'Ignore', title: 'Ignore' }
+      ]
+    )
     return
   }
 
   await resumePostWastageFlow(phoneNumber)
 }
 
-async function resumePostWastageFlow(phoneNumber) {
+// Step 1 of the nightly flow: deduct today's theoretical ingredient usage
+// (orders × recipes) from stock, then show Sam the estimated remaining stock
+// to confirm or correct before the model drafts tomorrow's vendor order.
+async function resumePostWastageFlow(phoneNumber, prefix = 'Wastage logged ✓') {
+  const today = todayIST()
+
+  try {
+    await applyDailyConsumption(today)
+  } catch (err) {
+    console.warn('[WastageFlow] Daily consumption deduction failed:', err.message)
+  }
+
+  let stock = []
+  try {
+    stock = await estimateRemainingStock()
+  } catch (err) {
+    console.warn('[WastageFlow] Stock estimate failed:', err.message)
+  }
+
+  if (stock.length > 0) {
+    const lines = stock
+      .map(s => `• ${s.name}: ${Math.round(s.qty * 10) / 10}${s.unit}`)
+      .join('\n')
+    await setBotState(phoneNumber, 'awaiting_stock_confirm', { estimates: stock, date: today })
+    await whatsappButtons(
+      phoneNumber,
+      `${prefix}\n\nBased on today's orders, here's what I estimate is left in stock:\n${lines}`,
+      [
+        { id: '1', title: 'Looks right ✅' },
+        { id: '2', title: 'Correct it ✏️' }
+      ]
+    )
+    return
+  }
+
+  // No ingredient tracking yet — go straight to the vendor order draft
+  await proceedToVendorOrder(phoneNumber, prefix)
+}
+
+// Step 2: generate tomorrow's predictions and draft the vendor order
+// (subtracting the stock levels Sam just confirmed/corrected).
+async function proceedToVendorOrder(phoneNumber, prefix = '') {
+  const head = prefix ? `${prefix}\n\n` : ''
+
   const { data: menuItems, error: menuErr } = await supabase
     .from('menu_items')
     .select('id, name')
@@ -236,14 +288,14 @@ async function resumePostWastageFlow(phoneNumber) {
   } catch (err) {
     console.error('[WastageFlow] Failed to generate tomorrow predictions:', err)
     await setBotState(phoneNumber, 'idle', null)
-    await whatsappReply(phoneNumber, 'Wastage logged ✓ Thanks Sam!')
+    await whatsappReply(phoneNumber, `${head}Thanks Sam!`.trim())
     return
   }
 
   const orderItems = await buildVendorOrderFromPredictions(tomorrowPredictions, menuItems)
   if (orderItems.length === 0) {
     await setBotState(phoneNumber, 'idle', null)
-    await whatsappReply(phoneNumber, 'Wastage logged ✓ No items predicted for tomorrow.')
+    await whatsappReply(phoneNumber, `${head}Stock covers tomorrow — nothing to order tonight.`.trim())
     return
   }
 
@@ -258,11 +310,16 @@ async function resumePostWastageFlow(phoneNumber) {
     source: 'wastage_flow'
   })
 
-  await whatsappReply(
+  await whatsappButtons(
     phoneNumber,
-    `Wastage logged ✓\n\nHere's tomorrow's order${vendorLine}:\n\n"${formattedMessage}"\n\nReply 1 to confirm or 2 to edit.`
+    `${head}Here's tomorrow's order${vendorLine}:\n\n"${formattedMessage}"`,
+    [
+      { id: '1', title: 'Confirm ✅' },
+      { id: '2', title: 'Edit ✏️' }
+    ]
   )
 }
 
 module.exports = handleWastageReply
 module.exports.resumePostWastageFlow = resumePostWastageFlow
+module.exports.proceedToVendorOrder = proceedToVendorOrder

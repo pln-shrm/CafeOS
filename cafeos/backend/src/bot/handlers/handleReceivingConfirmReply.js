@@ -1,9 +1,15 @@
 const supabase = require('../../services/supabaseClient')
-const { setBotState, whatsappReply, incrementInventoryLevels } = require('./helpers')
+const { setBotState, whatsappReply, whatsappButtons, incrementInventoryLevels } = require('./helpers')
 
 async function handleReceivingConfirmReply(phoneNumber, message, context) {
   const text = message.trim().toLowerCase()
   const orderId = context?.order_id
+
+  if (!orderId) {
+    await setBotState(phoneNumber, 'idle', null)
+    await whatsappReply(phoneNumber, "I lost track of which order this was. Send 'received' again to restart.")
+    return
+  }
 
   if (['1', 'ok', 'haan', 'yes', 'y'].includes(text)) {
     await supabase
@@ -27,7 +33,10 @@ async function handleReceivingConfirmReply(phoneNumber, message, context) {
     return
   }
 
-  await whatsappReply(phoneNumber, 'Reply 1 to confirm everything arrived, or 2 to edit.')
+  await whatsappButtons(phoneNumber, 'Did everything arrive as ordered?', [
+    { id: '1', title: 'All arrived ✅' },
+    { id: '2', title: "Something's off ✏️" }
+  ])
 }
 
 module.exports = handleReceivingConfirmReply

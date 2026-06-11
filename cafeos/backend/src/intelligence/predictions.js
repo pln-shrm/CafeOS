@@ -81,6 +81,19 @@ async function generatePredictions(date) {
     festivalName = festival.name
   }
 
+  // ── Owner-flagged events (most recent flag for this date wins) ──────
+  let eventMultiplier = 1.0
+  const { data: eventFlag } = await supabase
+    .from('event_flags')
+    .select('demand_multiplier, description')
+    .eq('date', date)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (eventFlag && Number(eventFlag.demand_multiplier) > 0) {
+    eventMultiplier = Number(eventFlag.demand_multiplier)
+  }
+
   // ── Yesterday's check-in signals ─────────────────────────────────────
   const { data: checkin } = await supabase
     .from('checkins')
@@ -160,7 +173,7 @@ async function generatePredictions(date) {
       else if (isHotFood) weatherMult *= 0.90
     }
 
-    let qty = baseline * weatherMult * festivalMultiplier
+    let qty = baseline * weatherMult * festivalMultiplier * eventMultiplier
 
     // Stockout signal: scale bump by how early the item ran out
     // Early stockout = more unmet demand = larger bump
@@ -206,7 +219,7 @@ async function generatePredictions(date) {
   }
 
   console.log(`[Predictions] Generated ${upsertRows.length} predictions for ${date}`)
-  return { rows: upsertRows, weather: { precipitation, maxTemp }, festivalName }
+  return { rows: upsertRows, weather: { precipitation, maxTemp }, festivalName, eventName: eventFlag?.description || null }
 }
 
 async function confirmPredictions(date) {
