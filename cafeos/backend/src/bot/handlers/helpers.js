@@ -57,23 +57,34 @@ async function parseVendorItems(text) {
         config: {
           responseMimeType: 'application/json',
           responseSchema: {
-            type: 'ARRAY',
+            type: 'OBJECT',
             description: 'List of items being ordered or received.',
-            items: {
-              type: 'OBJECT',
-              properties: {
-                name: { type: 'STRING', description: 'Name of the item (e.g. dal, rice, oil)' },
-                qty: { type: 'NUMBER', description: 'Quantity (must be a number)' },
-                unit: { type: 'STRING', description: 'Unit (e.g. kg, L, pieces, grams)' }
-              },
-              required: ['name', 'qty']
-            }
+            properties: {
+              items: {
+                type: 'ARRAY',
+                items: {
+                  type: 'OBJECT',
+                  properties: {
+                    name: { type: 'STRING', description: 'Name of the item (e.g. dal, rice, oil)' },
+                    qty: { type: 'NUMBER', description: 'Quantity (must be a number)' },
+                    unit: { type: 'STRING', description: 'Unit (e.g. kg, L, pieces, grams)' }
+                  },
+                  required: ['name', 'qty']
+                }
+              }
+            },
+            required: ['items']
           }
         }
       })
       
-      const parsed = JSON.parse(response.text)
-      const validItems = parsed.filter(i => i.name && !Number.isNaN(Number(i.qty)))
+      let rawText = response.text || ''
+      rawText = rawText.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim()
+      
+      const parsed = JSON.parse(rawText)
+      const parsedItems = parsed.items || []
+      
+      const validItems = parsedItems.filter(i => i.name && !Number.isNaN(Number(i.qty)))
       return validItems.map(i => ({
         name: i.name.trim(),
         qty: Number(i.qty),
