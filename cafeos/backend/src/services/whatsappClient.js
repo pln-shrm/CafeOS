@@ -19,7 +19,7 @@ async function whatsappReply(to, body) {
     )
     return response.data
   } catch (error) {
-    console.error('[WhatsApp Client] Failed to send message:', error.response?.data || error.message)
+    console.error('[WhatsApp Client] Failed to send message:', JSON.stringify(error.response?.data || error.message, null, 2))
     throw error
   }
 }
@@ -65,7 +65,7 @@ async function whatsappButtons(to, body, buttons = []) {
     )
     return response.data
   } catch (error) {
-    console.error('[WhatsApp Client] Interactive send failed, falling back to text:', error.response?.data || error.message)
+    console.error('[WhatsApp Client] Interactive send failed, falling back to text:', JSON.stringify(error.response?.data || error.message, null, 2))
     return textFallback()
   }
 }
