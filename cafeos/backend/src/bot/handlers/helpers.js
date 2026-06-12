@@ -49,8 +49,11 @@ async function setBotState(phoneNumber, state, contextJson = null) {
 const ai = require('../../services/llmClient')
 
 async function parseVendorItems(text) {
+  console.log(`[parseVendorItems] Input text: "${text}", ai client exists: ${!!ai}`)
+  
   if (ai) {
     try {
+      console.log('[parseVendorItems] Calling Gemini API...')
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: `Extract the items, quantities, and units from this user order: "${text}". If they mention "half", "quarter", etc., convert it to a decimal quantity.`,
@@ -79,20 +82,25 @@ async function parseVendorItems(text) {
       })
       
       let rawText = response.text || ''
+      console.log(`[parseVendorItems] Gemini raw response: "${rawText}"`)
       rawText = rawText.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim()
       
       const parsed = JSON.parse(rawText)
-      const parsedItems = parsed.items || []
+      const parsedItems = parsed.items || parsed || []
+      const itemsArray = Array.isArray(parsedItems) ? parsedItems : []
       
-      const validItems = parsedItems.filter(i => i.name && !Number.isNaN(Number(i.qty)))
+      const validItems = itemsArray.filter(i => i.name && !Number.isNaN(Number(i.qty)))
+      console.log(`[parseVendorItems] Gemini parsed ${validItems.length} items:`, JSON.stringify(validItems))
       return validItems.map(i => ({
         name: i.name.trim(),
         qty: Number(i.qty),
         unit: (i.unit || '').trim().toLowerCase()
       }))
     } catch (err) {
-      console.error('[LLM Parser] Failed to parse using Gemini, falling back to regex:', err)
+      console.error('[parseVendorItems] Gemini FAILED, falling back to regex:', err.message || err)
     }
+  } else {
+    console.warn('[parseVendorItems] No AI client — using regex fallback')
   }
 
   const items = []
@@ -101,13 +109,23 @@ async function parseVendorItems(text) {
   for (const seg of segments) {
     const trimmed = seg.trim()
     if (!trimmed) continue
-    // Match: any words as name, then a number, then optional unit
-    const match = trimmed.match(/^([\w\s]+?)\s+(\d+\.?\d*)\s*(kg|l|g|litre|litres|pieces|pcs)?$/i)
-    if (!match) continue
-    const name = match[1].trim()
-    const qty = Number(match[2])
-    const unit = match[3]?.toLowerCase() || ''
-    if (!Number.isNaN(qty) && qty > 0 && name) {
+    // Pattern 1: name first — "dal 3 kg"
+    const match1 = trimmed.match(/^([\w\s]+?)\s+(\d+\.?\d*)\s*(kg|l|g|litre|litres|liter|liters|pieces|pcs)?$/i)
+    // Pattern 2: qty first — "3 kg dal"
+    const match2 = trimmed.match(/^(\d+\.?\d*)\s*(kg|l|g|litre|litres|liter|liters|pieces|pcs)?\s+([\w\s]+)$/i)
+    
+    let name, qty, unit
+    if (match1) {
+      name = match1[1].trim()
+      qty = Number(match1[2])
+      unit = match1[3]?.toLowerCase() || ''
+    } else if (match2) {
+      name = match2[3].trim()
+      qty = Number(match2[1])
+      unit = match2[2]?.toLowerCase() || ''
+    }
+    
+    if (name && !Number.isNaN(qty) && qty > 0) {
       items.push({ name, qty, unit })
     }
   }
