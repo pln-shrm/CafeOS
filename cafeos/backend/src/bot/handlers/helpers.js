@@ -46,7 +46,44 @@ async function setBotState(phoneNumber, state, contextJson = null) {
   if (error) throw error
 }
 
+const ai = require('../../services/llmClient')
+
 async function parseVendorItems(text) {
+  if (ai) {
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: `Extract the items, quantities, and units from this user order: "${text}". If they mention "half", "quarter", etc., convert it to a decimal quantity.`,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: 'ARRAY',
+            description: 'List of items being ordered or received.',
+            items: {
+              type: 'OBJECT',
+              properties: {
+                name: { type: 'STRING', description: 'Name of the item (e.g. dal, rice, oil)' },
+                qty: { type: 'NUMBER', description: 'Quantity (must be a number)' },
+                unit: { type: 'STRING', description: 'Unit (e.g. kg, L, pieces, grams)' }
+              },
+              required: ['name', 'qty']
+            }
+          }
+        }
+      })
+      
+      const parsed = JSON.parse(response.text)
+      const validItems = parsed.filter(i => i.name && !Number.isNaN(Number(i.qty)))
+      return validItems.map(i => ({
+        name: i.name.trim(),
+        qty: Number(i.qty),
+        unit: (i.unit || '').trim().toLowerCase()
+      }))
+    } catch (err) {
+      console.error('[LLM Parser] Failed to parse using Gemini, falling back to regex:', err)
+    }
+  }
+
   const items = []
   // Split on commas/semicolons so each segment is one item
   const segments = text.split(/[,;]+/)
