@@ -44,23 +44,25 @@ async function executeAndLogHandler(handlerName, handlerFn, phoneNumber, ...args
   try {
     await handlerFn(phoneNumber, ...args)
     const duration = Date.now() - start
-    await supabase.from('handler_logs').insert({
+    const { error: logErr } = await supabase.from('handler_logs').insert({
       event: 'handler_invocation',
       handler_name: handlerName,
       phone_number: phoneNumber,
       outcome: 'success',
       duration_ms: duration
-    }).catch(err => console.error('[Telemetry Error]', err.message))
+    })
+    if (logErr) console.error('[Telemetry Error]', logErr.message)
   } catch (err) {
     const duration = Date.now() - start
-    await supabase.from('handler_logs').insert({
+    const { error: logErr } = await supabase.from('handler_logs').insert({
       event: 'handler_invocation',
       handler_name: handlerName,
       phone_number: phoneNumber,
       outcome: 'error',
       duration_ms: duration,
       error_message: err.message
-    }).catch(insertErr => console.error('[Telemetry Error]', insertErr.message))
+    })
+    if (logErr) console.error('[Telemetry Error]', logErr.message)
     throw err
   }
 }
