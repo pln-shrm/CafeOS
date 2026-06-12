@@ -1,6 +1,6 @@
 const { formatInTimeZone } = require('date-fns-tz')
 const supabase = require('../../services/supabaseClient')
-const { whatsappReply, whatsappButtons } = require('../../services/whatsappClient')
+const { whatsappReply, whatsappButtons, whatsappList } = require('../../services/whatsappClient')
 
 const IST = 'Asia/Kolkata'
 
@@ -199,6 +199,7 @@ function fuzzyMatchMenuItem(searchName, menuItems) {
 module.exports = {
   whatsappReply,
   whatsappButtons,
+  whatsappList,
   todayIST,
   tomorrowIST,
   formatRupees,

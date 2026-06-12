@@ -1,5 +1,6 @@
 const supabase = require('../../services/supabaseClient')
 const { formatRupees, whatsappReply } = require('./helpers')
+const { showWhatElseMenu } = require('./handleWhatElseReply')
 
 async function handleBalanceQuery(phoneNumber, message) {
   const match = message.match(/(?:owe|balance)\s+(.+)/i)
@@ -33,6 +34,7 @@ async function handleBalanceQuery(phoneNumber, message) {
     : `Balance in your favor: ${formatRupees(Math.abs(balance))}`
 
   await whatsappReply(phoneNumber, `${vendorName} — ${balanceText}`)
+  await showWhatElseMenu(phoneNumber)
 }
 
 module.exports = handleBalanceQuery

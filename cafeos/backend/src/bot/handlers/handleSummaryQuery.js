@@ -1,5 +1,6 @@
 const supabase = require('../../services/supabaseClient')
 const { formatRupees, todayIST, whatsappReply } = require('./helpers')
+const { showWhatElseMenu } = require('./handleWhatElseReply')
 
 async function handleSummaryQuery(phoneNumber) {
   const today = todayIST()
@@ -13,6 +14,7 @@ async function handleSummaryQuery(phoneNumber) {
 
   if (!orders || orders.length === 0) {
     await whatsappReply(phoneNumber, 'No orders logged yet today.')
+    await showWhatElseMenu(phoneNumber)
     return
   }
 
@@ -33,6 +35,7 @@ async function handleSummaryQuery(phoneNumber) {
     phoneNumber,
     `Today's summary:\nOrders: ${orders.length}\nRevenue: ${formatRupees(total)}\nCash: ${formatRupees(cash)} | UPI: ${formatRupees(upi)} | Pending: ${formatRupees(pending)}`
   )
+  await showWhatElseMenu(phoneNumber)
 }
 
 module.exports = handleSummaryQuery

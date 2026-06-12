@@ -2,7 +2,7 @@ const supabase = require('../../services/supabaseClient')
 const { callGemini } = require('../../services/geminiService')
 const { setBotState, whatsappReply, whatsappButtons } = require('./helpers')
 const { VENDOR_MESSAGE_PROMPT } = require('./prompts')
-const { showWhatElseMenu } = require('./handleMainMenuReply')
+const { showWhatElseMenu } = require('./handleWhatElseReply')
 
 async function buildForwardableMessage(items, vendorName) {
   const itemList = (items || [])
@@ -70,9 +70,7 @@ async function handleVendorConfirmReply(phoneNumber, message, context) {
       `Order confirmed ✓\n\nForward this${vendorLine}:\n\n"${formattedMessage}"`
     )
 
-    if (context?.source === 'greeting_flow') {
-      await showWhatElseMenu(phoneNumber)
-    }
+    await showWhatElseMenu(phoneNumber)
     return
   }
 

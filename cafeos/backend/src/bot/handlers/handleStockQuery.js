@@ -1,5 +1,6 @@
 const supabase = require('../../services/supabaseClient')
 const { todayIST, whatsappReply } = require('./helpers')
+const { showWhatElseMenu } = require('./handleWhatElseReply')
 
 async function handleStockQuery(phoneNumber) {
   const today = todayIST()
@@ -13,6 +14,7 @@ async function handleStockQuery(phoneNumber) {
 
   if (!predictions || predictions.length === 0) {
     await whatsappReply(phoneNumber, 'No prep predictions found for today.')
+    await showWhatElseMenu(phoneNumber)
     return
   }
 
@@ -40,6 +42,7 @@ async function handleStockQuery(phoneNumber) {
   })
 
   await whatsappReply(phoneNumber, `Stock status (est.):\n${lines.join('\n')}`)
+  await showWhatElseMenu(phoneNumber)
 }
 
 module.exports = handleStockQuery

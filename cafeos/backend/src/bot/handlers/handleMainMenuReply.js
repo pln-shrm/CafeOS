@@ -1,7 +1,8 @@
 const supabase = require('../../services/supabaseClient')
-const { setBotState, whatsappButtons, whatsappReply } = require('./helpers')
+const { setBotState, whatsappButtons, whatsappList, whatsappReply } = require('./helpers')
 const handleSummaryQuery = require('./handleSummaryQuery')
 const handleStockQuery = require('./handleStockQuery')
+const { showWhatElseMenu, MAIN_MENU_ROWS } = require('./handleWhatElseReply')
 
 async function fetchRecentVendors() {
   const { data } = await supabase
@@ -46,38 +47,22 @@ async function handleMainMenuReply(phoneNumber, message) {
 
   if (id === 'menu_summary') {
     await handleSummaryQuery(phoneNumber)
-    await showWhatElseMenu(phoneNumber)
     return
   }
 
   if (id === 'menu_stock') {
     await handleStockQuery(phoneNumber)
-    await showWhatElseMenu(phoneNumber)
+    return
+  }
+
+  if (id === 'menu_manual') {
+    await setBotState(phoneNumber, 'idle', null)
+    await whatsappReply(phoneNumber, "Sure! Just type what you need — order, stock, balance, anything. I'll handle it.")
     return
   }
 
   // Unrecognised tap — re-show menu
-  await whatsappButtons(
-    phoneNumber,
-    'Please choose one of the options:',
-    [
-      { id: 'menu_order', title: 'Place Order' },
-      { id: 'menu_summary', title: "Today's Summary" },
-      { id: 'menu_stock', title: 'Check Stock' }
-    ]
-  )
-}
-
-async function showWhatElseMenu(phoneNumber) {
-  await setBotState(phoneNumber, 'awaiting_what_else', null)
-  await whatsappButtons(
-    phoneNumber,
-    'Is there anything else I can help you with?',
-    [
-      { id: 'more_yes', title: 'Yes, more please' },
-      { id: 'more_done', title: 'No, all done!' }
-    ]
-  )
+  await whatsappList(phoneNumber, 'Please choose one of the options:', 'Choose an option', MAIN_MENU_ROWS)
 }
 
 module.exports = { handleMainMenuReply, showWhatElseMenu }

@@ -1,18 +1,34 @@
-const { setBotState, whatsappButtons, whatsappReply } = require('./helpers')
+const { setBotState, whatsappButtons, whatsappList, whatsappReply } = require('./helpers')
+
+const MAIN_MENU_ROWS = [
+  { id: 'menu_order',   title: 'Place Order',      description: 'Order from a vendor' },
+  { id: 'menu_summary', title: "Today's Summary",   description: 'Sales & revenue today' },
+  { id: 'menu_stock',   title: 'Check Stock',       description: 'Inventory & prep levels' },
+  { id: 'menu_manual',  title: 'Type Freely',       description: 'Ask anything or give info' }
+]
+
+async function showWhatElseMenu(phoneNumber) {
+  await setBotState(phoneNumber, 'awaiting_what_else', null)
+  await whatsappButtons(
+    phoneNumber,
+    'Is there anything else I can help you with?',
+    [
+      { id: 'more_yes', title: 'Yes, more please' },
+      { id: 'more_done', title: 'No, all done!' }
+    ]
+  )
+}
 
 async function handleWhatElseReply(phoneNumber, message) {
   const id = message.trim()
 
   if (id === 'more_yes') {
     await setBotState(phoneNumber, 'awaiting_main_menu', null)
-    await whatsappButtons(
+    await whatsappList(
       phoneNumber,
       'Sure! What can I help you with?',
-      [
-        { id: 'menu_order', title: 'Place Order' },
-        { id: 'menu_summary', title: "Today's Summary" },
-        { id: 'menu_stock', title: 'Check Stock' }
-      ]
+      'Choose an option',
+      MAIN_MENU_ROWS
     )
     return
   }
@@ -34,4 +50,4 @@ async function handleWhatElseReply(phoneNumber, message) {
   )
 }
 
-module.exports = handleWhatElseReply
+module.exports = { handleWhatElseReply, showWhatElseMenu, MAIN_MENU_ROWS }

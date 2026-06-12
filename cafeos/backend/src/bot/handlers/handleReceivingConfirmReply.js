@@ -1,5 +1,6 @@
 const supabase = require('../../services/supabaseClient')
 const { setBotState, whatsappReply, whatsappButtons, incrementInventoryLevels } = require('./helpers')
+const { showWhatElseMenu } = require('./handleWhatElseReply')
 
 async function handleReceivingConfirmReply(phoneNumber, message, context) {
   const text = message.trim().toLowerCase()
@@ -24,6 +25,7 @@ async function handleReceivingConfirmReply(phoneNumber, message, context) {
       phoneNumber,
       `Inventory updated ✓\n\nMarked order from ${context?.vendor_name} as received.`
     )
+    await showWhatElseMenu(phoneNumber)
     return
   }
 

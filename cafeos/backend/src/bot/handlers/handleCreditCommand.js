@@ -1,5 +1,6 @@
 const supabase = require('../../services/supabaseClient')
 const { formatRupees, whatsappReply } = require('./helpers')
+const { showWhatElseMenu } = require('./handleWhatElseReply')
 
 async function getBalance(vendorName) {
   const { data, error } = await supabase
@@ -55,6 +56,7 @@ async function handleCreditCommand(phoneNumber, message) {
     : `Balance in your favor: ${formatRupees(Math.abs(balance))}`
 
   await whatsappReply(phoneNumber, `${vendorName} logged. ${balanceText}`)
+  await showWhatElseMenu(phoneNumber)
 }
 
 module.exports = handleCreditCommand
