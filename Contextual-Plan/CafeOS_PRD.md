@@ -84,11 +84,11 @@ CafeOS is two user-facing systems sharing one backend.
 [OWNER]  ←→ [REACT PWA WEB APP — OWNER PORTAL]
 ```
 
-**WhatsApp Bot:** Owner-only. Runs on Twilio WhatsApp API. Handles all of Sam's interactions — morning prep, vendor ordering, mid-day summaries, evening check-in, nightly wastage logging, and weekly digest. Owner never downloads anything.
+**WhatsApp Bot:** Owner-only. Runs on Meta Cloud API (direct WhatsApp Business integration, no third-party intermediary). Handles all of Sam's interactions — morning prep, vendor ordering, mid-day summaries, evening check-in, nightly wastage logging, and weekly digest. Uses interactive button messages (tappable, not "Reply 1/2" text). Owner never downloads anything.
 
-**React PWA Web App:** Staff and owner-facing. Two portals behind different auth. Staff portal: take orders, mark attendance. Owner portal: manage menu, manage staff, view reports. Works offline; queues orders in IndexedDB and syncs to Supabase when internet returns.
+**React PWA Web App:** Staff and owner-facing. Two portals behind different auth. Staff portal: take orders, mark attendance. Owner portal: manage menu, manage staff, view reports (owner portal is currently a stub — most owner management is done via the WhatsApp bot). Works offline; queues orders in IndexedDB and syncs to Supabase when internet returns.
 
-**Shared Backend:** Node.js + Express. Single API server. Handles webhooks from Twilio, requests from the web app, and all database operations. Calls Claude API for NLP on voice notes. Calls Open-Meteo for weather. Runs scheduled jobs for morning prep sheet and evening prompts.
+**Shared Backend:** Node.js 22 + Express. Single API server. Handles webhooks from Meta Cloud API, requests from the web app, and all database operations. Calls Google Gemini API for NLP on voice notes and free-text parsing (not Claude — Gemini handles audio natively). Calls Open-Meteo for weather. Runs scheduled jobs for morning prep sheet and evening prompts.
 
 **Intelligence Layer:** Not a separate service — a module inside the backend. Runs predictions using sales history, wastage logs, weather data, power cut alerts, and Goa festival calendar. No external ML service. Pure statistical logic in Node.js.
 
@@ -139,7 +139,7 @@ Or tell me what you're changing (e.g. "biryani 25, fish curry 10")
 
 **Owner Response — Edit (free text):**
 - Sam can type natural language: "biryani 25, skip fish curry today" or "make biryani 25 and fish curry 10"
-- Claude API parses this. System prompt instructs Claude to extract: item name → adjusted quantity. Claude returns structured JSON: `[{"item": "biryani", "qty": 25}, {"item": "fish_curry", "qty": 0}]`
+- Gemini API parses this. System prompt instructs Gemini to extract: item name → adjusted quantity. Returns structured JSON: `[{"item": "biryani", "qty": 25}, {"item": "fish_curry", "qty": 0}]`
 - Backend updates the day's prediction record with Sam's overrides.
 - Bot replies with a confirmation listing the updated quantities.
 - These overrides are stored as feedback signals in the `predictions` table and inform future predictions.
@@ -174,7 +174,7 @@ OR (without vendor name, which triggers a prompt):
 order rice 5kg, dal 3kg
 ```
 
-**Parsing:** Claude API parses Sam's message to extract:
+**Parsing:** Gemini API parses Sam's message to extract:
 - List of items with quantities and units
 - Vendor name (if present after `→`)
 - If vendor name absent, bot responds: "Who should this go to? Reply with the vendor name."
@@ -271,9 +271,9 @@ power cuts, or anything else worth remembering for tomorrow?
 
 *Voice note:* Twilio provides the audio file URL. Backend downloads the audio. Sends to Claude API with transcription instruction. Claude transcribes and extracts signals in one call.
 
-**Claude API call for check-in parsing:**
+**Gemini API call for check-in parsing:**
 
-System prompt instructs Claude to extract the following structured signals from the transcription or text:
+System prompt instructs Gemini to extract the following structured signals from the transcription or text:
 - `stockouts`: list of items that ran out, approximate time if mentioned
 - `demand_spike`: description of unusual high-volume events (large group, office order, event nearby)
 - `power_disruption`: duration and approximate time if mentioned
@@ -338,7 +338,7 @@ Just tell me what's remaining, e.g.:
 - `everything fine except fish curry 8` — Claude parses natural language
 - Numbers in Hindi/Konkani (e.g. "teen" for 3) — Claude API handles multilingual
 
-**Parsing:** Claude API extracts structured list: `[{"item": "biryani", "qty_left": 3}, {"item": "fish_curry", "qty_left": 6}]`
+**Parsing:** Gemini API extracts structured list: `[{"item": "biryani", "qty_left": 3}, {"item": "fish_curry", "qty_left": 6}]`
 
 Items not mentioned are treated as: not logged (null), not zero.
 
@@ -533,7 +533,7 @@ Well done this week! 🙌
 - Revenue comparison: this week's total sales vs previous week's total sales, percentage change
 - Biggest day: day of week with highest single-day revenue
 - Margin: (total sales - total procurement cost) / total sales × 100. Only calculated if procurement prices are logged for ≥3 days. If not enough data: "Margin: Not enough price data this week"
-- Suggestion: One actionable suggestion generated by Claude API from this week's data
+- Suggestion: One actionable suggestion generated by Gemini API from this week's data. Weekly summary also includes prediction accuracy % (MAPE-based).
 
 **Acceptance Criteria:**
 - [ ] Message sent every Sunday at 9:00 PM IST.
@@ -542,7 +542,89 @@ Well done this week! 🙌
 - [ ] Margin displayed as approximate (~xx%) because procurement data may be incomplete.
 - [ ] Margin line not shown if procurement prices are missing for more than 2 days.
 - [ ] Revenue comparison shows positive/negative correctly.
-- [ ] Claude API generates one suggestion; if API fails, suggestion line is omitted.
+- [ ] Gemini API generates one suggestion; if API fails, suggestion line is omitted.
+
+---
+
+---
+
+### Additional Bot Features — Implemented Beyond Original Spec
+
+These features were built during development and are in production code, but were not in the original feature specification.
+
+---
+
+#### FEATURE B-10: Bulk Order Command
+
+**Description:** Sam can type `order all` or `order tomorrow` to auto-generate the full ingredient order for tomorrow's prep, computed from tomorrow's predictions + current inventory levels.
+
+**Command:** `order all for tomorrow` / `order all ingredients` / `order tomorrow`
+
+**Logic:**
+1. Fetch tomorrow's predictions (falls back to today's if tomorrow not generated yet).
+2. Look up recipe mapping (`menu_item_ingredients` table): portions × quantity_per_portion = raw ingredient required.
+3. Compare against current inventory (`inventory_levels` table).
+4. Send only what's in deficit.
+
+**Bot response:**
+```
+Here is the consolidated list of ingredients for tomorrow's prep:
+
+- Rice: 4kg
+- Chicken: 800g
+- Vegetables: 2kg
+
+You can forward this list to your vendors.
+```
+
+If nothing is needed: "Good news! You have enough stock for tomorrow's prep. Nothing to order. ✅"
+
+---
+
+#### FEATURE B-11: Delivery Receiving Flow
+
+**Description:** When a vendor delivery arrives, Sam can text something like `rice arrived` or `got the delivery from Rice Vendor`. The bot parses this, checks against outstanding procurement orders, and confirms the stock update.
+
+**Trigger keywords:** `received`, `arrived`, `delivery`
+
+**Flow:**
+1. Gemini parses the message to identify the vendor/items received.
+2. Bot shows a confirmation with the expected order details and asks Sam to confirm or edit quantities.
+3. On confirmation: updates inventory levels and marks procurement record as `delivered`.
+
+**Bot states used:** `awaiting_receiving_confirm`, `awaiting_receiving_edit`
+
+---
+
+#### FEATURE B-12: Stock Query
+
+**Description:** Sam can ask for current stock levels at any time.
+
+**Command:** `stock` / `inventory`
+
+**Bot response:** Lists current inventory levels for all ingredients, flagging anything below a minimum threshold.
+
+**Bot state used:** `awaiting_stock_confirm` (for confirmation of stock adjustments if anomalies are flagged)
+
+---
+
+#### FEATURE B-13: Stale State Recovery
+
+**Description:** If Sam was mid-conversation and didn't reply for more than 6 hours, the bot detects the stale state on her next message and offers to resume or start fresh.
+
+**Trigger:** Any incoming message when `bot_state.updated_at` is more than 6 hours old and `current_state !== 'idle'`.
+
+**Bot response (interactive buttons):**
+```
+You were in the middle of a process earlier.
+Do you want to resume where you left off or start fresh?
+```
+Buttons: `Resume` / `Start Over`
+
+On "Resume": restores previous state and context.
+On "Start Over": sets state to `idle` and handles message as a fresh command.
+
+**Bot state used:** `awaiting_recovery`
 
 ---
 
@@ -1153,7 +1235,7 @@ These require a decision before or during development. They are flagged, not ass
 | OQ-09 | How should the bot handle messages from unknown numbers? | If someone other than Sam texts the bot number, what happens? Currently: no response. Should it reply "This bot is for Sam's Cafe operations only"? | Week 1 — security decision |
 | OQ-10 | What is the vendor order delivery timing assumption? | The generated vendor message currently says "please deliver tomorrow morning." Is this always correct? Or does Sam want to specify delivery timing per order? | Week 2 — before building vendor order flow |
 | OQ-11 | Should the Google Sheet be pre-built or auto-created? | A pre-built sheet with formatted headers and named tabs is safer. Auto-creation is possible via Sheets API but fragile. Recommendation: pre-build the sheet manually and share with the service account. | Week 3 — before Google Sheets sync |
-| OQ-12 | What is the fallback if Twilio WhatsApp sandbox expires mid-project? | Twilio sandbox sessions expire after 24 hours without reconnection. For the production demo, a verified Twilio number is required. Budget and timeline for Twilio verification needed. | Week 1 — Twilio account setup |
+| OQ-12 | Meta access token management. | The Meta developer console issues temporary tokens (~24h). For the demo, a permanent System User token must be created in Meta Business Manager. This requires a verified business. | Before demo week |
 | OQ-13 | Partial order edits — can staff remove an item from an in-progress order? | Currently unspecified. Staff app has + / − buttons, which handles this before confirmation. But can a confirmed order be voided or edited? Decision: allow void (full cancellation) only, no partial edit of confirmed orders. This needs owner agreement. | Week 2 — before finalising order flow |
 | OQ-14 | Monday closure — does the system still send the Sunday wastage prompt? | On Sunday nights, Sam needs to log what's left before Monday closure to prevent spoilage. The standard wastage prompt should still go out Sunday at 10 PM. Confirm this is correct. | Week 5 — before wastage flow |
 

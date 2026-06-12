@@ -8,6 +8,7 @@ const {
   setBotState
 } = require('./handlers/helpers')
 const handleOnboarding = require('./handlers/handleOnboarding')
+const handleRecoveryReply = require('./handlers/handleRecoveryReply')
 const handlePrepConfirmReply = require('./handlers/handlePrepConfirmReply')
 const handlePrepEditReply = require('./handlers/handlePrepEditReply')
 const handleVendorConfirmReply = require('./handlers/handleVendorConfirmReply')
@@ -27,8 +28,42 @@ const handleReceivingConfirmReply = require('./handlers/handleReceivingConfirmRe
 const handleReceivingEditReply = require('./handlers/handleReceivingEditReply')
 const handleAnomalyResolutionReply = require('./handlers/handleAnomalyResolutionReply')
 const handleStockConfirmReply = require('./handlers/handleStockConfirmReply')
+const handleBulkOrderCommand = require('./handlers/handleBulkOrderCommand')
+const { handleGreeting, isGreeting } = require('./handlers/handleGreeting')
+const { handleMainMenuReply } = require('./handlers/handleMainMenuReply')
+const handleVendorSelectionReply = require('./handlers/handleVendorSelectionReply')
+const handleOrderVendorNameReply = require('./handlers/handleOrderVendorNameReply')
+const handleOrderItemsInteractiveReply = require('./handlers/handleOrderItemsInteractiveReply')
+const handleWhatElseReply = require('./handlers/handleWhatElseReply')
+const { whatsappButtons } = require('./handlers/helpers')
 
 const router = Router()
+
+async function executeAndLogHandler(handlerName, handlerFn, phoneNumber, ...args) {
+  const start = Date.now()
+  try {
+    await handlerFn(phoneNumber, ...args)
+    const duration = Date.now() - start
+    await supabase.from('handler_logs').insert({
+      event: 'handler_invocation',
+      handler_name: handlerName,
+      phone_number: phoneNumber,
+      outcome: 'success',
+      duration_ms: duration
+    }).catch(err => console.error('[Telemetry Error]', err.message))
+  } catch (err) {
+    const duration = Date.now() - start
+    await supabase.from('handler_logs').insert({
+      event: 'handler_invocation',
+      handler_name: handlerName,
+      phone_number: phoneNumber,
+      outcome: 'error',
+      duration_ms: duration,
+      error_message: err.message
+    }).catch(insertErr => console.error('[Telemetry Error]', insertErr.message))
+    throw err
+  }
+}
 
 
 async function routeMessage({ phoneNumber, message, isVoiceNote, mediaUrl }) {
@@ -44,89 +79,120 @@ async function routeMessage({ phoneNumber, message, isVoiceNote, mediaUrl }) {
   if (stateRow.updated_at && stateRow.current_state !== 'idle') {
     const updatedAt = new Date(stateRow.updated_at)
     const staleCutoff = Date.now() - 6 * 60 * 60 * 1000
-    if (updatedAt.getTime() < staleCutoff) {
-      await setBotState(phoneNumber, 'idle', null)
-      console.log('[Bot] Stale state reset', stateRow.current_state)
-      stateRow.current_state = 'idle'
-      stateRow.context_json = null
+    if (updatedAt.getTime() < staleCutoff && stateRow.current_state !== 'awaiting_recovery') {
+      console.log('[Bot] Stale state detected', stateRow.current_state)
+      await setBotState(phoneNumber, 'awaiting_recovery', { previous_state: stateRow.current_state, previous_context: stateRow.context_json })
+      await executeAndLogHandler('whatsappButtons', whatsappButtons, phoneNumber, `You were in the middle of a process earlier. Do you want to resume where you left off or start fresh?`, [
+        { id: '1', title: 'Resume' },
+        { id: '2', title: 'Start Over' }
+      ])
+      return
     }
   }
 
   switch (stateRow.current_state) {
+    case 'awaiting_recovery':
+      await executeAndLogHandler('handleRecoveryReply', handleRecoveryReply, phoneNumber, trimmed, stateRow.context_json)
+      return
     case 'awaiting_prep_confirm':
-      await handlePrepConfirmReply(phoneNumber, trimmed)
+      await executeAndLogHandler('handlePrepConfirmReply', handlePrepConfirmReply, phoneNumber, trimmed)
       return
     case 'awaiting_prep_edit':
-      await handlePrepEditReply(phoneNumber, trimmed)
+      await executeAndLogHandler('handlePrepEditReply', handlePrepEditReply, phoneNumber, trimmed)
       return
     case 'awaiting_vendor_confirm':
-      await handleVendorConfirmReply(phoneNumber, trimmed, stateRow.context_json)
+      await executeAndLogHandler('handleVendorConfirmReply', handleVendorConfirmReply, phoneNumber, trimmed, stateRow.context_json)
       return
     case 'awaiting_vendor_edit':
-      await handleVendorEditReply(phoneNumber, trimmed, stateRow.context_json)
+      await executeAndLogHandler('handleVendorEditReply', handleVendorEditReply, phoneNumber, trimmed, stateRow.context_json)
       return
     case 'awaiting_vendor_name':
-      await handleVendorNameReply(phoneNumber, trimmed, stateRow.context_json)
+      await executeAndLogHandler('handleVendorNameReply', handleVendorNameReply, phoneNumber, trimmed, stateRow.context_json)
       return
     case 'awaiting_evening_checkin':
-      await handleEveningCheckinReply(phoneNumber, trimmed, isVoiceNote, mediaUrl)
+      await executeAndLogHandler('handleEveningCheckinReply', handleEveningCheckinReply, phoneNumber, trimmed, isVoiceNote, mediaUrl)
       return
     case 'awaiting_wastage':
-      await handleWastageReply(phoneNumber, trimmed)
+      await executeAndLogHandler('handleWastageReply', handleWastageReply, phoneNumber, trimmed)
       return
     case 'awaiting_receiving_confirm':
-      await handleReceivingConfirmReply(phoneNumber, trimmed, stateRow.context_json)
+      await executeAndLogHandler('handleReceivingConfirmReply', handleReceivingConfirmReply, phoneNumber, trimmed, stateRow.context_json)
       return
     case 'awaiting_receiving_edit':
-      await handleReceivingEditReply(phoneNumber, trimmed, stateRow.context_json)
+      await executeAndLogHandler('handleReceivingEditReply', handleReceivingEditReply, phoneNumber, trimmed, stateRow.context_json)
       return
     case 'awaiting_anomaly_resolution':
-      await handleAnomalyResolutionReply(phoneNumber, trimmed, stateRow.context_json)
+      await executeAndLogHandler('handleAnomalyResolutionReply', handleAnomalyResolutionReply, phoneNumber, trimmed, stateRow.context_json)
       return
     case 'awaiting_stock_confirm':
-      await handleStockConfirmReply(phoneNumber, trimmed, stateRow.context_json)
+      await executeAndLogHandler('handleStockConfirmReply', handleStockConfirmReply, phoneNumber, trimmed, stateRow.context_json)
+      return
+    case 'awaiting_main_menu':
+      await executeAndLogHandler('handleMainMenuReply', handleMainMenuReply, phoneNumber, trimmed)
+      return
+    case 'awaiting_vendor_selection':
+      await executeAndLogHandler('handleVendorSelectionReply', handleVendorSelectionReply, phoneNumber, trimmed, stateRow.context_json)
+      return
+    case 'awaiting_order_vendor_name':
+      await executeAndLogHandler('handleOrderVendorNameReply', handleOrderVendorNameReply, phoneNumber, trimmed, stateRow.context_json)
+      return
+    case 'awaiting_order_items_interactive':
+      await executeAndLogHandler('handleOrderItemsInteractiveReply', handleOrderItemsInteractiveReply, phoneNumber, trimmed, stateRow.context_json)
+      return
+    case 'awaiting_what_else':
+      await executeAndLogHandler('handleWhatElseReply', handleWhatElseReply, phoneNumber, trimmed)
       return
     default:
       break
   }
 
+  if (isGreeting(trimmed)) {
+    await executeAndLogHandler('handleGreeting', handleGreeting, phoneNumber)
+    return
+  }
+
+  if (lowered.startsWith('order') && (lowered.includes('all') || lowered.includes('tomorrow'))) {
+    await executeAndLogHandler('handleBulkOrderCommand', handleBulkOrderCommand, phoneNumber, trimmed)
+    return
+  }
+
   if (lowered.startsWith('order')) {
-    await handleVendorOrderCommand(phoneNumber, trimmed)
+    await executeAndLogHandler('handleVendorOrderCommand', handleVendorOrderCommand, phoneNumber, trimmed)
     return
   }
 
   if (lowered.includes('received') || lowered.includes('arrived') || lowered.includes('delivery')) {
-    await handleReceivingCommand(phoneNumber, trimmed)
+    await executeAndLogHandler('handleReceivingCommand', handleReceivingCommand, phoneNumber, trimmed)
     return
   }
 
   if (lowered.startsWith('credit') || lowered.startsWith('paid')) {
-    await handleCreditCommand(phoneNumber, trimmed)
+    await executeAndLogHandler('handleCreditCommand', handleCreditCommand, phoneNumber, trimmed)
     return
   }
 
   // owe/balance before summary so "what do I owe today" isn't swallowed by "today"
   if (lowered.includes('owe') || lowered.includes('balance')) {
-    await handleBalanceQuery(phoneNumber, trimmed)
+    await executeAndLogHandler('handleBalanceQuery', handleBalanceQuery, phoneNumber, trimmed)
     return
   }
 
   if (lowered.includes('summary') || lowered.includes('aaj') || lowered.includes('today')) {
-    await handleSummaryQuery(phoneNumber)
+    await executeAndLogHandler('handleSummaryQuery', handleSummaryQuery, phoneNumber)
     return
   }
 
   if (lowered.includes('stock') || lowered.includes('inventory')) {
-    await handleStockQuery(phoneNumber)
+    await executeAndLogHandler('handleStockQuery', handleStockQuery, phoneNumber)
     return
   }
 
   if (lowered.includes('event')) {
-    await handleEventFlag(phoneNumber, trimmed)
+    await executeAndLogHandler('handleEventFlag', handleEventFlag, phoneNumber, trimmed)
     return
   }
 
-  await handleFallback(phoneNumber, trimmed)
+  await executeAndLogHandler('handleFallback', handleFallback, phoneNumber, trimmed)
 }
 
 router.get('/', (req, res) => {

@@ -31,22 +31,22 @@
 ┌──────────────────────────────────────────────────────────────────┐
 │  VERCEL                                                           │
 │  React PWA (Vite + React + TailwindCSS)                          │
-│  Staff Portal ──── Owner Portal                                   │
+│  Staff Portal ──── Owner Portal (stub)                            │
 │  IndexedDB (idb) for offline queue                                │
 └────────────────────────────┬─────────────────────────────────────┘
                              │ HTTPS REST
 ┌────────────────────────────▼─────────────────────────────────────┐
 │  RENDER                                                           │
-│  Node.js + Express API                                            │
-│  ├── Twilio Webhook Handler (WhatsApp bot logic)                  │
+│  Node.js 22 + Express API                                         │
+│  ├── Meta Cloud API Webhook Handler (WhatsApp bot logic)          │
 │  ├── REST API (web app → DB operations)                           │
 │  ├── Intelligence Module (predictions, multipliers)               │
 │  ├── Scheduled Jobs (node-cron: 8am, 7pm, 10pm, 11pm, Sun 9pm)   │
 │  └── Google Sheets Sync (nightly + on-demand)                     │
 └────────┬──────────────┬──────────────┬──────────────┬────────────┘
          │              │              │              │
-   Supabase        Twilio API    Claude API     Open-Meteo
-  (PostgreSQL)    (WhatsApp)   (NLP + voice)  (Weather API)
+   Supabase        Meta Cloud    Gemini API     Open-Meteo
+  (PostgreSQL)    API (WhatsApp) (NLP + voice) (Weather API)
 ```
 
 ---
@@ -64,7 +64,7 @@ Vite + React gives the fastest local development experience for a two-person stu
 ### Version
 
 ```
-node: 20.x LTS (use this exactly — Render and Vercel both default to 20)
+node: 22.x LTS (upgraded from 20.x for native WebSocket support)
 react: 18.3.x
 vite: 5.x
 ```
@@ -140,16 +140,16 @@ VitePWA({
 
 ### What it's used for in this project
 
-Single API server that handles everything: Twilio webhook callbacks (WhatsApp messages come in here), REST endpoints for the web app, scheduled jobs (morning prep sheet, evening check-in prompt, nightly wastage prompt, Google Sheets sync), and the intelligence module (prediction calculations).
+Single API server that handles everything: Meta Cloud API webhook callbacks (WhatsApp messages come in here), REST endpoints for the web app, scheduled jobs (morning prep sheet, evening check-in prompt, nightly wastage prompt, Google Sheets sync), and the intelligence module (prediction calculations).
 
 ### Why Express over alternatives (Fastify, Hono, etc.)
 
-Express has the most Twilio and Supabase integration examples online; for a first-time Twilio user, following existing tutorials without translation overhead matters more than performance differences at this scale.
+Express has the most Supabase integration examples online; the ecosystem is mature and well-documented for a student team.
 
 ### Version
 
 ```
-node: 20.x LTS
+node: 22.x LTS
 express: 4.19.x
 ```
 
@@ -160,17 +160,20 @@ express: 4.19.x
   "dependencies": {
     "express": "^4.19.0",
     "express-async-errors": "^3.1.0",
+    "express-rate-limit": "^8.5.2",
     "@supabase/supabase-js": "^2.44.0",
-    "twilio": "^5.2.0",
-    "node-cron": "^3.0.3",
+    "@google/genai": "^2.8.0",
+    "node-cron": "^4.2.1",
     "axios": "^1.7.0",
     "dotenv": "^16.4.0",
     "bcrypt": "^5.1.1",
     "cors": "^2.8.5",
-    "morgan": "^1.10.0",
-    "googleapis": "^140.0.0",
-    "cheerio": "^1.0.0",
-    "xml2js": "^0.6.0"
+    "pino": "^10.3.1",
+    "pino-pretty": "^13.1.3",
+    "googleapis": "^173.0.0",
+    "jsonwebtoken": "^9.0.3",
+    "date-fns-tz": "^3.2.0",
+    "uuid": "^14.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"
@@ -198,28 +201,20 @@ express: 4.19.x
 ### Scheduled jobs (node-cron)
 
 ```js
-// All times IST = UTC+5:30
-// 8:00 AM IST = 02:30 UTC
-cron.schedule('30 2 * * 2-7', sendMorningPrepSheet)   // Tue–Sun (Mon closed)
+// All times use node-cron v4 with { timezone: 'Asia/Kolkata' } — do NOT manually convert to UTC
+const IST = { timezone: 'Asia/Kolkata' }
 
-// 9:15 AM IST follow-up = 03:45 UTC
-cron.schedule('45 3 * * 2-7', sendPrepSheetReminder)
-
-// 7:00 PM IST = 13:30 UTC
-cron.schedule('30 13 * * 2-7', sendEveningCheckin)
-
-// 10:00 PM IST = 16:30 UTC
-cron.schedule('30 16 * * 0,2-7', sendWastagePollAndSundayAlert)
-// Note: Sunday (0) included for Sunday wastage before Monday closure
-
-// 11:00 PM IST = 17:30 UTC
-cron.schedule('30 17 * * *', runGoogleSheetsSync)
-
-// Sunday 9:00 PM IST = Sunday 15:30 UTC
-cron.schedule('30 15 * * 0', sendWeeklySummary)
+cron.schedule('0 8 * * 2-7', runMorningPrepJob, IST)         // 8:00 AM Tue–Sun (Mon closed)
+cron.schedule('15 9 * * 2-7', runPrepFollowupJob, IST)       // 9:15 AM Tue–Sun (follow-up if no reply)
+cron.schedule('30 9 * * 2-7', runPrepAutoConfirmJob, IST)    // 9:30 AM Tue–Sun (auto-confirm)
+cron.schedule('0 19 * * 2-7', runEveningCheckinJob, IST)     // 7:00 PM Tue–Sun
+cron.schedule('0 22 * * 0,2-7', runWastagePromptJob, IST)    // 10:00 PM Tue–Sun + Sunday
+cron.schedule('45 22 * * 0,2-7', runWastageAutoProceedJob, IST) // 10:45 PM (auto-proceed if no reply)
+cron.schedule('0 21 * * 0', runWeeklySummaryJob, IST)        // 9:00 PM Sunday
+cron.schedule('0 23 * * *', syncDailyDataToSheets, IST)      // 11:00 PM daily
 ```
 
-> **Decision required before Week 4:** Render's free tier spins down after 15 minutes of inactivity. Scheduled jobs will not fire if the server is asleep. Either: (a) upgrade to Render Starter ($7/month), or (b) use a separate free cron service (cron-job.org) that pings the server 5 minutes before each job fires to wake it up. Recommendation: option (b) to keep costs at zero during the finternship.
+> **Render free tier:** Spins down after 15 minutes of inactivity — scheduled jobs will not fire if the server is asleep. Use cron-job.org (free) to ping `/health` 5 minutes before each scheduled job to wake the server. Alternatively upgrade to Render Starter ($7/month).
 
 ### Gotchas
 
@@ -466,218 +461,255 @@ CREATE POLICY "owner_all" ON orders
 
 ---
 
-## 5. WhatsApp — Twilio API
+## 5. WhatsApp — Meta Cloud API
 
 ### What it's used for in this project
 
-The entire owner-facing interface. Sam sends messages to a Twilio WhatsApp number; Twilio POSTs them as webhooks to the Express backend. The backend processes the message, runs logic, and sends a reply via Twilio's API. All bot flows (morning prep, vendor orders, check-ins, wastage, weekly summary) route through this.
+The entire owner-facing interface. Sam sends messages to a Meta-registered WhatsApp Business number; Meta POSTs them as webhooks to the Express backend. The backend processes the message, runs logic, and sends a reply via the Meta Cloud API. All bot flows (morning prep, vendor orders, check-ins, wastage, weekly summary) route through this. The bot also sends interactive button messages — tap targets instead of "Reply 1/2" text — using Meta's interactive message format.
 
-### Why Twilio over alternatives (Meta Cloud API, WATI, Interakt)
+### Why Meta Cloud API over Twilio
 
-Twilio has the clearest documentation for first-time API users, an easy sandbox for testing without Meta business verification, and a Node.js SDK that handles signature validation out of the box.
+Meta Cloud API is the direct integration with WhatsApp (no third-party intermediary). Supports interactive button messages natively. Free for the first 1,000 service conversations per month. No sandbox limitations — works with a real WhatsApp Business number from day one.
 
-### Version
+### No SDK — direct HTTP
 
-```
-twilio: ^5.2.0  (Node.js SDK)
-```
+No npm package needed. All calls use `axios` directly against `https://graph.facebook.com/v17.0/`.
 
-### Account setup sequence (do this in Week 1)
+### Account setup sequence
 
 ```
-1. Create Twilio account → https://console.twilio.com
-2. Go to Messaging → Try it out → Send a WhatsApp message
-3. Follow sandbox join flow (Sam texts "join [word]" to the sandbox number)
-4. In sandbox settings, set the webhook URL:
-   https://your-render-app.onrender.com/webhook/whatsapp
-5. Set HTTP method: POST
-6. Copy your Account SID and Auth Token to .env
+1. Go to developers.facebook.com → Create App → Business type
+2. Add WhatsApp product to the app
+3. In WhatsApp → Getting Started, get the test phone number
+4. Set webhook URL: https://your-render-app.onrender.com/webhook/whatsapp
+5. Set webhook verify token (any string you choose) → store as META_VERIFY_TOKEN
+6. Subscribe to webhook fields: messages
+7. Copy META_ACCESS_TOKEN, META_PHONE_NUMBER_ID, META_APP_SECRET to .env
 ```
 
 ### Environment variables needed
 
 ```env
-TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-TWILIO_AUTH_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-TWILIO_WHATSAPP_FROM=whatsapp:+14155238886  # sandbox number (changes when you go production)
-SAM_WHATSAPP_TO=whatsapp:+91XXXXXXXXXX      # Sam's number in E.164 format
+META_ACCESS_TOKEN=EAAxxxxxx                 # permanent system user token or temp dev token
+META_PHONE_NUMBER_ID=1234567890             # from WhatsApp Business API settings
+META_APP_SECRET=xxxxxxxxxxxxxxxx            # for HMAC-SHA256 webhook signature validation
+META_VERIFY_TOKEN=your-chosen-string        # for webhook verification handshake
+SAM_WHATSAPP_TO=91XXXXXXXXXX                # Sam's number without + prefix
 ```
 
-### Sending a message (the core pattern)
-
-```js
-const twilio = require('twilio')
-const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
-
-async function sendToSam(body) {
-  return client.messages.create({
-    body,
-    from: process.env.TWILIO_WHATSAPP_FROM,
-    to: process.env.TWILIO_WHATSAPP_TO
-  })
-}
-```
-
-### Incoming message structure (what Twilio POSTs to your webhook)
-
-```
-Body           = text of Sam's message
-From           = whatsapp:+91XXXXXXXXXX
-To             = whatsapp:+14155238886
-MessageSid     = SM... (unique per message — use for deduplication)
-MediaUrl0      = URL to voice note file (if Sam sends audio)
-MediaContentType0 = audio/ogg (WhatsApp voice notes are .ogg Opus codec)
-```
-
-### Webhook validation middleware
-
-```js
-const twilio = require('twilio')
-
-function validateTwilioWebhook(req, res, next) {
-  const twilioSignature = req.headers['x-twilio-signature']
-  const url = `https://your-render-app.onrender.com${req.originalUrl}`
-  const params = req.body
-
-  const isValid = twilio.validateRequest(
-    process.env.TWILIO_AUTH_TOKEN,
-    twilioSignature,
-    url,
-    params
-  )
-
-  if (!isValid) return res.status(403).send('Forbidden')
-  next()
-}
-```
-
-### Gotchas
-
-- **Sandbox 24-hour session window.** The Twilio sandbox requires Sam to re-send "join [word]" every 24 hours to stay connected. This is fine for development but must be replaced before demo week with a proper Twilio WhatsApp sender. Budget ~$20–30 for the approved Twilio WhatsApp number (one-time setup). Do this in Week 6–7.
-- **Voice note format.** WhatsApp sends voice notes as `.ogg` files with the Opus codec. Claude's API accepts audio, but check the exact format accepted (see Section 6). You may need to transcode with `ffmpeg` if Claude requires a different format. Install `fluent-ffmpeg` and `ffmpeg-static` packages if needed.
-- **Twilio free trial credit.** Twilio gives ~$15 trial credit. WhatsApp messages cost ~$0.005 each. At 20 messages/day × 56 days = ~1,120 messages = ~$5.60. You won't run out in the 8 weeks.
-- **Webhook must be HTTPS.** Render gives you HTTPS automatically. Local development requires a tunnel — use `ngrok` (free tier) to expose localhost: `ngrok http 3000`. Update the Twilio webhook URL every time you restart ngrok (or pay for a fixed ngrok domain — $8/month). Alternative: use the Twilio CLI which has a built-in tunnel: `twilio phone-numbers:update ... --sms-url=...`.
-- **Message idempotency.** Twilio occasionally delivers the same webhook twice. Store `MessageSid` in a `processed_webhooks` table (or a simple in-memory Set with TTL) and skip duplicates. This prevents double-logging the same order or wastage entry.
-- **Reply format.** When replying to an incoming message, you do NOT need to quote the original. Just `client.messages.create({ body, from, to })`. Keep replies under 1600 characters — Twilio splits longer messages automatically, which can arrive out of order.
-
----
-
-## 6. AI / NLP — Claude API
-
-### What it's used for in this project
-
-Three specific tasks:
-
-1. **Voice note parsing (Evening Check-In):** Transcribes Sam's `.ogg` voice note and extracts structured signals (stockouts, demand spikes, power cuts) as JSON.
-2. **Free-text command parsing:** Parses Sam's natural language vendor orders (`order rice 5kg, dal 3kg → Rice Vendor`) and prep sheet edits (`biryani 25, skip fish curry`) into structured JSON.
-3. **Weekly summary suggestion (Phase III / optional Phase I):** Generates one-sentence actionable suggestion from the week's sales data.
-
-### Why Claude over OpenAI GPT / Gemini
-
-Claude's instruction-following on JSON-only outputs is more reliable for structured extraction tasks, and the team is building on Anthropic's platform already.
-
-### Version
-
-```
-Model: claude-sonnet-4-20250514
-SDK: Direct fetch (no official Node SDK needed — use axios or native fetch)
-```
-
-### API call pattern (vendor order parsing)
+### Sending a plain text message
 
 ```js
 const axios = require('axios')
 
-async function parseVendorOrder(rawMessage) {
-  const response = await axios.post(
-    'https://api.anthropic.com/v1/messages',
+async function whatsappReply(toNumber, body) {
+  await axios.post(
+    `https://graph.facebook.com/v17.0/${process.env.META_PHONE_NUMBER_ID}/messages`,
     {
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 500,
-      system: `You are a JSON extraction assistant for a cafe management system.
-Extract vendor order details from Sam's WhatsApp message.
-Return ONLY valid JSON, no preamble, no markdown fences.
-Schema: { "items": [{"name": string, "qty": number, "unit": string, "price_per_unit": number|null}], "vendor_name": string|null, "delivery_date": string|null }
-If vendor name is absent, set vendor_name to null.
-If price is absent, set price_per_unit to null.`,
-      messages: [{ role: 'user', content: rawMessage }]
+      messaging_product: 'whatsapp',
+      to: toNumber,
+      type: 'text',
+      text: { body }
     },
-    {
-      headers: {
-        'x-api-key': process.env.CLAUDE_API_KEY,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json'
-      }
-    }
+    { headers: { Authorization: `Bearer ${process.env.META_ACCESS_TOKEN}` } }
   )
+}
+```
 
-  const text = response.data.content[0].text
-  return JSON.parse(text)
+### Sending interactive button messages
+
+```js
+async function whatsappButtons(toNumber, body, buttons) {
+  // buttons: [{ id: '1', title: 'Go with this ✅' }, { id: '2', title: 'Make changes ✏️' }]
+  await axios.post(
+    `https://graph.facebook.com/v17.0/${process.env.META_PHONE_NUMBER_ID}/messages`,
+    {
+      messaging_product: 'whatsapp',
+      to: toNumber,
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: { text: body },
+        action: {
+          buttons: buttons.map(b => ({ type: 'reply', reply: { id: b.id, title: b.title } }))
+        }
+      }
+    },
+    { headers: { Authorization: `Bearer ${process.env.META_ACCESS_TOKEN}` } }
+  )
+}
+```
+
+### Incoming message structure (what Meta POSTs to your webhook)
+
+```js
+// body.entry[0].changes[0].value.messages[0]
+{
+  id: 'wamid.xxx',             // unique message ID — use for deduplication
+  from: '91XXXXXXXXXX',        // sender's number without +
+  type: 'text' | 'audio' | 'interactive',
+  text: { body: 'message text' },
+  audio: { id: 'media-id' },   // if type === 'audio'
+  interactive: {
+    button_reply: { id: '1', title: 'button label' }  // if Sam tapped a button
+  }
+}
+```
+
+### Webhook validation (HMAC-SHA256)
+
+```js
+const crypto = require('crypto')
+
+// Meta sends x-hub-signature-256 header
+const appSecret = process.env.META_APP_SECRET
+const sigHeader = req.headers['x-hub-signature-256']
+const expected = 'sha256=' + crypto
+  .createHmac('sha256', appSecret)
+  .update(req.rawBody)   // rawBody must be preserved before express.json() parses it
+  .digest('hex')
+if (!crypto.timingSafeEqual(Buffer.from(sigHeader), Buffer.from(expected))) {
+  return res.sendStatus(403)
+}
+```
+
+> **rawBody requirement:** `express.json()` must be configured with a `verify` callback to preserve the raw buffer:
+> ```js
+> app.use(express.json({ verify: (req, _res, buf) => { req.rawBody = buf } }))
+> ```
+
+### Audio (voice note) handling
+
+```js
+// 1. Get the download URL from Meta
+const mediaRes = await axios.get(
+  `https://graph.facebook.com/v17.0/${audioMediaId}`,
+  { headers: { Authorization: `Bearer ${process.env.META_ACCESS_TOKEN}` } }
+)
+const mediaUrl = mediaRes.data.url
+
+// 2. Download the audio using the URL (also requires Bearer auth)
+const audioRes = await axios.get(mediaUrl, {
+  responseType: 'arraybuffer',
+  headers: { Authorization: `Bearer ${process.env.META_ACCESS_TOKEN}` }
+})
+const base64Audio = Buffer.from(audioRes.data).toString('base64')
+const mimeType = audioRes.headers['content-type'] || 'audio/ogg'
+// Pass base64Audio + mimeType to Gemini for transcription
+```
+
+### Webhook deduplication
+
+Store each message ID in a `processed_webhooks` table. Meta occasionally delivers the same webhook twice. Use an atomic upsert with a unique constraint on `message_sid` — a duplicate insert will throw a `23505` (unique violation), which is the signal to bail out:
+
+```js
+const { error } = await supabase.from('processed_webhooks').insert({ message_sid: messageId })
+if (error?.code === '23505') return res.status(200).send('OK') // duplicate — skip processing
+```
+
+### Gotchas
+
+- **Interactive button IDs arrive as the message body.** When Sam taps a button, Meta sends `interactive.button_reply.id` (the string you set, e.g. `'1'`). The webhook router extracts this as the message body so all state machine handlers can treat it as if Sam typed `'1'`.
+- **Message body max:** WhatsApp interactive message body is capped at 1,024 characters. Plain text messages have no hard cap but keep under 4,096 characters to avoid display issues.
+- **Webhook must be HTTPS.** Render gives HTTPS automatically. Use `ngrok` for local testing.
+- **Token expiry.** The temporary access token in the Meta dev console expires every ~24 hours. For production, create a permanent System User token in Meta Business Manager. Do this before demo week.
+- **Number format.** Meta uses numbers without the `+` prefix (e.g. `919876543210`). Twilio used `whatsapp:+91...` format. Do not mix the two.
+
+---
+
+## 6. AI / NLP — Google Gemini API
+
+### What it's used for in this project
+
+Five specific tasks:
+
+1. **Morning prep sheet message:** Formats the prediction data into a natural WhatsApp message for Sam.
+2. **Voice note parsing (Evening Check-In):** Transcribes Sam's `.ogg` voice note and extracts structured signals (stockouts, demand spikes, power cuts) as JSON. Gemini's native multimodal support handles audio directly without a separate transcription step.
+3. **Free-text command parsing:** Parses Sam's natural language vendor orders (`order rice 5kg, dal 3kg → Rice Vendor`), prep sheet edits, and wastage logs into structured JSON using Gemini's JSON schema enforcement feature.
+4. **Vendor message generation:** Generates natural-language WhatsApp messages ready for Sam to forward to vendors.
+5. **Weekly Sunday summary:** Formats the week's aggregated stats into a warm WhatsApp message.
+
+### Why Gemini over Claude / OpenAI
+
+Gemini's native audio support (no separate transcription service needed) and structured JSON output (via `responseMimeType: 'application/json'` + `responseSchema`) makes it the simplest choice for the mix of voice and text parsing this project requires.
+
+### Package
+
+```
+@google/genai: ^2.8.0  (Google's official Node.js SDK)
+```
+
+### Environment variable
+
+```env
+GEMINI_API_KEY=AIzaxxxxxx
+```
+
+### API call pattern (JSON extraction with schema enforcement)
+
+```js
+const { GoogleGenAI } = require('@google/genai')
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
+
+async function callGeminiJSON(systemPrompt, userMessage, maxTokens, schema) {
+  const result = await ai.models.generateContent({
+    model: 'gemini-2.0-flash',
+    config: {
+      systemInstruction: systemPrompt,
+      maxOutputTokens: maxTokens,
+      responseMimeType: 'application/json',
+      responseSchema: schema     // Gemini enforces the schema — no JSON.parse failures
+    },
+    contents: typeof userMessage === 'string'
+      ? [{ role: 'user', parts: [{ text: userMessage }] }]
+      : [{ role: 'user', parts: userMessage }]  // multimodal: text + audio parts
+  })
+  return JSON.parse(result.text)
 }
 ```
 
 ### API call pattern (voice note transcription + signal extraction)
 
 ```js
-async function parseVoiceNote(audioBase64, mimeType = 'audio/ogg') {
-  const response = await axios.post(
-    'https://api.anthropic.com/v1/messages',
-    {
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 800,
-      system: `You are parsing a cafe owner's end-of-day voice note.
-First transcribe the audio. Then extract structured operational signals.
-The owner may speak in English, Hindi, or Konkani — handle all three.
-Return ONLY valid JSON, no preamble, no markdown fences.
-Schema:
-{
-  "transcription": string,
-  "stockouts": [{"item": string, "time": string|null}],
-  "demand_spike": string|null,
-  "power_disruption": {"time": string|null, "duration_hours": number|null}|null,
-  "weather_impact": string|null,
-  "other_notes": string|null
-}`,
-      messages: [{
-        role: 'user',
-        content: [{
-          type: 'document',
-          source: {
-            type: 'base64',
-            media_type: mimeType,
-            data: audioBase64
-          }
-        }, {
-          type: 'text',
-          text: 'Transcribe and extract signals from this voice note.'
-        }]
-      }]
-    },
-    { headers: { 'x-api-key': process.env.CLAUDE_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' } }
-  )
+// Sam's voice note arrives as base64 audio from Meta Cloud API
+const userContent = [
+  { text: "Sam's voice note — transcribe and extract signals." },
+  {
+    inlineData: {
+      mimeType: 'audio/ogg',   // WhatsApp voice notes are Opus-encoded OGG
+      data: base64AudioString
+    }
+  }
+]
 
-  return JSON.parse(response.data.content[0].text)
-}
+const signals = await callGeminiJSON(SYSTEM_PROMPT_VOICE, userContent, 800, signalSchema)
+// Returns: { transcription, stockouts, demand_spike, power_disruption, weather_impact, other_notes }
 ```
 
-### Environment variable
+### API call pattern (plain text output — prep sheet, vendor messages, weekly summary)
 
-```env
-CLAUDE_API_KEY=sk-ant-...
+```js
+async function callGemini(systemPrompt, userMessage, maxTokens, temperature = 0.5) {
+  const result = await ai.models.generateContent({
+    model: 'gemini-2.0-flash',
+    config: {
+      systemInstruction: systemPrompt,
+      maxOutputTokens: maxTokens,
+      temperature
+    },
+    contents: [{ role: 'user', parts: [{ text: userMessage }] }]
+  })
+  return result.text?.trim() || null
+}
 ```
 
 ### Gotchas
 
-- **JSON parsing failures.** Even with explicit instructions, Claude occasionally wraps JSON in markdown code fences (` ```json ... ``` `). Always strip these before `JSON.parse()`:
-  ```js
-  const clean = text.replace(/```json\n?|```/g, '').trim()
-  return JSON.parse(clean)
-  ```
-- **Audio format support.** Check the current Claude API docs for supported audio MIME types before sending `.ogg`. If `.ogg/opus` isn't supported, transcode to `.mp3` using `fluent-ffmpeg`. The voice note URL from Twilio is publicly accessible for ~4 hours — download it immediately in the webhook handler before processing.
-- **API latency.** Expect 1–3 seconds per Claude API call. This is fine for evening check-in parsing (async) but add a timeout for synchronous bot reply flows. If Claude takes >5s, reply "Got it Sam, I saved your note ✓" immediately, then process in background.
-- **Rate limits.** On the free tier: 5 requests/minute. At Sam's usage level (a few requests per day), this is not a concern. But if you run load tests, throttle them.
-- **Fallback for all Claude calls.** Every Claude call must have a fallback: if the API fails or JSON parsing fails, log the raw text and continue with degraded functionality. Never let a Claude failure block the bot from responding to Sam.
-- **Cost.** Claude Sonnet 4 is ~$3/million input tokens. Sam's usage: maybe 10 Claude calls/day × ~500 tokens avg = 5,000 tokens/day. 56 days = 280,000 tokens ≈ $0.84 for the entire 8 weeks. Negligible.
+- **Schema enforcement vs. JSON.parse.** `callGeminiJSON` uses `responseMimeType: 'application/json'` + `responseSchema`. Gemini enforces the schema server-side — the response is always valid JSON that matches the schema. No need to strip markdown fences. If the response doesn't match the schema, Gemini returns a parsing error, which the service wrapper catches and returns `null`.
+- **Audio format.** Gemini accepts `audio/ogg` (Opus codec) natively — no transcoding needed. Pass the raw base64 bytes from the Meta Cloud API audio download directly.
+- **Fallback for all Gemini calls.** Every call wraps in try/catch and returns `null` on failure. Every call site checks for `null` and handles gracefully. A Gemini failure must never block the bot from replying to Sam.
+- **Temperature.** Use `temperature: 0` for JSON extraction (deterministic). Use `temperature: 0.5–0.7` for natural language generation (prep sheet, vendor messages, weekly summary).
+- **Cost.** Gemini 2.0 Flash is very cheap. Sam's usage (< 20 calls/day) is negligible in cost terms.
 
 ---
 
@@ -907,11 +939,13 @@ GOOGLE_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE K
 
 ## 10. Power Cut Signal — Goa Electricity Scraper
 
+> **Status: Not yet implemented.** The `cheerio` and `xml2js` packages are not installed. This feature is descoped pending a check of whether `goaelectricity.gov.in` has a parseable outage page (OQ-07). The intelligence module falls back gracefully — `power_cut_risk` defaults to `false` when no signal is available.
+
 ### What it's used for in this project
 
 Checks the Goa Electricity Department website daily at 7 AM for scheduled outages in the Vasco area. If an outage is scheduled, sets `power_cut_risk = true` for that day, which reduces predictions for perishable items by ×0.75.
 
-### Package
+### Package (add if implementing)
 
 ```
 cheerio: ^1.0.0  (HTML parsing after fetching the outage page)
@@ -1148,35 +1182,35 @@ Render /health endpoint live  →  cron-job.org wake pings (scheduled jobs)
 {
   "name": "cafeos-backend",
   "version": "1.0.0",
-  "engines": { "node": "20.x" },
+  "engines": { "node": "22.x" },
   "dependencies": {
+    "@google/genai": "^2.8.0",
     "@supabase/supabase-js": "^2.44.0",
     "axios": "^1.7.0",
     "bcrypt": "^5.1.1",
-    "cheerio": "^1.0.0",
     "cors": "^2.8.5",
+    "date-fns-tz": "^3.2.0",
     "dotenv": "^16.4.0",
     "express": "^4.19.0",
     "express-async-errors": "^3.1.0",
-    "googleapis": "^140.0.0",
+    "express-rate-limit": "^8.5.2",
+    "googleapis": "^173.0.0",
+    "jsonwebtoken": "^9.0.3",
     "morgan": "^1.10.0",
-    "node-cron": "^3.0.3",
-    "twilio": "^5.2.0"
+    "node-cron": "^4.2.1",
+    "pino": "^10.3.1",
+    "pino-pretty": "^13.1.3",
+    "uuid": "^14.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"
   },
   "scripts": {
     "start": "node src/server.js",
-    "dev": "nodemon src/server.js"
+    "dev": "nodemon src/server.js",
+    "seed": "node src/utils/seedMockData.js"
   }
 }
-```
-
-**Optional (add in Week 5 if voice note transcoding is needed):**
-```json
-"fluent-ffmpeg": "^2.1.3",
-"ffmpeg-static": "^5.2.0"
 ```
 
 ### Frontend (`/frontend/package.json`)
@@ -1217,14 +1251,15 @@ SUPABASE_URL=https://xxxx.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=         # backend only — never expose to frontend
 SUPABASE_ANON_KEY=                 # frontend only — safe to expose
 
-# Twilio
-TWILIO_ACCOUNT_SID=
-TWILIO_AUTH_TOKEN=
-TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
-SAM_WHATSAPP_TO=whatsapp:+91XXXXXXXXXX
+# Meta Cloud API (WhatsApp)
+META_ACCESS_TOKEN=                 # system user token from Meta Business Manager
+META_PHONE_NUMBER_ID=              # WhatsApp Business phone number ID
+META_APP_SECRET=                   # for HMAC-SHA256 webhook signature validation
+META_VERIFY_TOKEN=                 # any string — used for webhook handshake
+SAM_WHATSAPP_TO=91XXXXXXXXXX       # Sam's number, no + prefix
 
-# Claude
-CLAUDE_API_KEY=
+# Google Gemini
+GEMINI_API_KEY=
 
 # Google Sheets
 GOOGLE_SPREADSHEET_ID=
@@ -1234,7 +1269,8 @@ GOOGLE_PRIVATE_KEY=
 # App config
 NODE_ENV=development
 PORT=3000
-OWNER_EMAIL=sam@samscafe.com    # used to identify owner session in RLS
+JWT_SECRET=                        # secret for signing staff session JWTs
+FRONTEND_ORIGIN=http://localhost:5173
 ```
 
 ---

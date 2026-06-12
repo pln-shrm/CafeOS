@@ -40,15 +40,15 @@
 ║  │  Sam types / speaks      │    │  │  Staff  │  │  Owner     │  │   ║
 ║  │  into existing app       │    │  │  Portal │  │  Portal    │  │   ║
 ║  └────────────┬─────────────┘    └──┴────┬────┴──┴─────┬──────┘   ║
-║               │ Twilio webhook           │ HTTPS REST   │          ║
+║               │ Meta Cloud API           │ HTTPS REST   │          ║
 ╚═══════════════╪══════════════════════════╪══════════════╪══════════╝
                 │                          │              │
 ╔═══════════════╪══════════════════════════╪══════════════╪══════════╗
 ║  BACKEND LAYER (Render — Node.js + Express)                         ║
 ║               │                          │              │           ║
 ║  ┌────────────▼──────────┐   ┌───────────▼──────────────▼───────┐  ║
-║  │  Twilio Webhook       │   │  REST API                         │  ║
-║  │  Handler              │   │  /orders, /menu, /staff,          │  ║
+║  │  Meta Cloud API       │   │  REST API                         │  ║
+║  │  Webhook Handler      │   │  /orders, /menu, /staff,          │  ║
 ║  │  POST /webhook/       │   │  /attendance, /auth, /sync        │  ║
 ║  │  whatsapp             │   │  /reports, /vendor, /predictions  │  ║
 ║  └────────────┬──────────┘   └──────────────────┬────────────────┘  ║
@@ -68,7 +68,7 @@
 ║  EXTERNAL SERVICES                                                    ║
 ║              │                    │                                   ║
 ║  ┌───────────▼──┐  ┌───────────┐  ┌───────────┐  ┌───────────────┐  ║
-║  │  Supabase    │  │ Claude    │  │Open-Meteo │  │ Google Sheets │  ║
+║  │  Supabase    │  │ Gemini    │  │Open-Meteo │  │ Google Sheets │  ║
 ║  │  PostgreSQL  │  │ API       │  │(weather)  │  │ (owner view)  │  ║
 ║  │  + Auth      │  │ (NLP/     │  │           │  │               │  ║
 ║  │  + RLS       │  │  voice)   │  │           │  │               │  ║
@@ -83,11 +83,11 @@
 | WhatsApp Client | Sam's existing app | Input/output channel for the owner. No install required. |
 | React PWA | Vite + React + TailwindCSS | Staff order-taking, owner menu management, offline queue UI. |
 | Express Backend | Node.js 20 + Express 4 | All business logic, webhook handling, scheduled jobs, DB writes, external API calls. |
-| Bot State Machine | In-memory + `bot_state` Supabase table | Tracks which conversation step Sam is in (e.g., "awaiting_prep_confirm") across server restarts. |
+| Bot State Machine | `bot_state` Supabase table | Tracks which conversation step Sam is in (e.g., "awaiting_prep_confirm") across server restarts. Also detects stale states (>6 hours) and routes into a recovery flow. |
 | Intelligence Module | Pure Node.js (`/src/intelligence/`) | Statistical prediction: day-of-week baseline + EWMA + contextual multipliers. No ML framework. |
 | Supabase | PostgreSQL 15 + Auth + RLS | Single source of truth for all data. Auth handles both staff PIN sessions and owner JWT sessions. |
-| Twilio | WhatsApp Business API | Receives Sam's messages via webhook, sends bot replies, delivers voice note URLs. |
-| Claude API | `claude-sonnet-4-20250514` | Voice note transcription, free-text command parsing, weekly summary suggestion. |
+| Meta Cloud API | WhatsApp Business API (direct) | Receives Sam's messages via webhook (HMAC-SHA256 validated), sends bot replies, sends interactive button messages, delivers audio file IDs. |
+| Gemini API | `gemini-2.0-flash` (`@google/genai`) | Morning prep formatting, voice note transcription + signal extraction, free-text command parsing, vendor message generation, weekly summary formatting. |
 | Open-Meteo | Free REST API | Daily rainfall and temperature forecast for Vasco da Gama coordinates. |
 | Google Sheets | Sheets API v4 + Service Account | Owner-readable business data view. Nightly append-only sync from Supabase. |
 | Vercel | Static hosting + CDN | Hosts the React PWA. HTTPS included. Auto-deploy on push to `main`. |
@@ -118,13 +118,34 @@ Staff/Owner     →  POST/GET /api/*         →  REST routes  ─┘
 ```
 server.js
 │
-├── /webhook/whatsapp         ← Twilio posts here (Twilio webhook signature validated)
-│     └── bot/router.js       ← Dispatches to correct bot flow handler
-│           ├── handlePrepConfirm()
-│           ├── handleVendorOrder()
-│           ├── handleEveningCheckin()
-│           ├── handleWastage()
-│           └── handleSummaryRequest()
+├── /webhook/whatsapp         ← Meta Cloud API posts here (HMAC-SHA256 signature validated)
+│     └── bot/webhook.js      ← Deduplicates (processed_webhooks), extracts button taps,
+│           │                    resolves audio media IDs, dispatches to routeMessage()
+│           └── routeMessage() ← State machine router + intent detection
+│                 ├── State-based handlers (read bot_state.current_state first):
+│                 │     awaiting_prep_confirm      → handlePrepConfirmReply
+│                 │     awaiting_prep_edit         → handlePrepEditReply
+│                 │     awaiting_vendor_confirm    → handleVendorConfirmReply
+│                 │     awaiting_vendor_edit       → handleVendorEditReply
+│                 │     awaiting_vendor_name       → handleVendorNameReply
+│                 │     awaiting_evening_checkin   → handleEveningCheckinReply
+│                 │     awaiting_wastage           → handleWastageReply
+│                 │     awaiting_receiving_confirm → handleReceivingConfirmReply
+│                 │     awaiting_receiving_edit    → handleReceivingEditReply
+│                 │     awaiting_anomaly_resolution→ handleAnomalyResolutionReply
+│                 │     awaiting_stock_confirm     → handleStockConfirmReply
+│                 │     awaiting_recovery          → handleRecoveryReply
+│                 │
+│                 └── Intent-based handlers (idle state keyword matching):
+│                       "order all"/"order tomorrow" → handleBulkOrderCommand
+│                       "order ..."                  → handleVendorOrderCommand
+│                       "received"/"arrived"/"delivery" → handleReceivingCommand
+│                       "credit"/"paid"              → handleCreditCommand
+│                       "owe"/"balance"              → handleBalanceQuery
+│                       "summary"/"aaj"/"today"      → handleSummaryQuery
+│                       "stock"/"inventory"          → handleStockQuery
+│                       "event ..."                  → handleEventFlag
+│                       (anything else)              → handleFallback
 │
 ├── /api/orders               ← Web app staff portal
 ├── /api/menu                 ← Web app (staff reads, owner writes)
@@ -246,12 +267,12 @@ The bot state machine reads and writes this table on every incoming message. `co
 
 ### 3B. Owner Receives and Approves Morning Prep Sheet
 
-**Trigger:** `node-cron` fires at 08:00 AM IST (02:30 UTC), Tuesday–Sunday.
+**Trigger:** `node-cron` fires at 08:00 AM IST, Tuesday–Sunday (uses `{ timezone: 'Asia/Kolkata' }` option — no manual UTC conversion).
 
 ```
 [node-cron: 02:30 UTC, Tue–Sun]
          │
-         │  1. jobs/morningPrepSheet.js fires
+         │  1. jobs/cron.js → runMorningPrepJob() fires
          │
          ▼
 [Intelligence Module: generatePredictions(date)]
@@ -285,18 +306,23 @@ The bot state machine reads and writes this table on every incoming message. `co
          │     { date, menu_item_id, predicted_qty, confirmed: false }
          │
          ▼
-[Twilio API: send to Sam]
+[Gemini API: format prep sheet message]
          │
-         │  5. client.messages.create({
-         │       body: prepSheetMessage,
-         │       from: TWILIO_WHATSAPP_FROM,
-         │       to: SAM_WHATSAPP_TO
-         │     })
+         │  5. callGemini(SYSTEM_PROMPT_C, predictionsContext, 600)
+         │     Returns formatted WhatsApp message string
+         │     Fallback: deterministic bullet list if Gemini fails
+         │
+         ▼
+[Meta Cloud API: send interactive buttons to Sam]
+         │
+         │  6. POST graph.facebook.com/v17.0/{phoneNumberId}/messages
+         │     type: 'interactive', buttons: ['Go with this ✅', 'Make changes ✏️']
+         │     Sam sees tappable buttons, not "Reply 1/2" text
          │
          ▼
 [Update bot_state]
          │
-         │  6. UPDATE bot_state SET
+         │  7. UPDATE bot_state SET
          │       current_state = 'awaiting_prep_confirm',
          │       context_json = { date, predictions: [...] }
          │     WHERE phone_number = SAM_NUMBER
@@ -304,45 +330,47 @@ The bot state machine reads and writes this table on every incoming message. `co
          │  Now waiting for Sam's reply...
          │
 ╔════════╧═══════════════════════════════════════════════════════╗
-║  SAM RECEIVES MESSAGE AND REPLIES                              ║
+║  SAM RECEIVES MESSAGE AND REPLIES (taps a button or types)     ║
 ╚════════╤═══════════════════════════════════════════════════════╝
          │
          ▼
-[Twilio webhook: POST /webhook/whatsapp]
+[Meta webhook: POST /webhook/whatsapp]
          │
-         │  7. Validate Twilio signature
+         │  8. Validate Meta HMAC-SHA256 signature
+         │     Deduplicate on message_sid (processed_webhooks table)
+         │     Extract button_reply.id as message body if interactive tap
          │     Read bot_state for Sam's number
          │     current_state = 'awaiting_prep_confirm'
          │
-         ├── Sam replies "1" (approve) ──────────────────────────┐
+         ├── Sam taps "Go with this ✅" (button id '1') ──────────┐
          │                                                        │
-         │   8a. UPDATE predictions SET confirmed = true          │
+         │   9a. UPDATE predictions SET confirmed = true          │
          │       for all rows with today's date                   │
          │                                                        │
-         │   9a. UPDATE bot_state SET current_state = 'idle'      │
+         │   10a. UPDATE bot_state SET current_state = 'idle'     │
          │                                                        │
-         │   10a. Twilio reply: "Got it! Today's prep locked in ✓"│
+         │   11a. Meta reply: "Got it! Today's prep locked in ✓"  │
          │                                                  ◄─────┘
          │
-         ├── Sam replies with edits (free text) ─────────────────┐
+         ├── Sam taps "Make changes ✏️" or types edits ──────────┐
          │                                                        │
-         │   8b. Claude API called:                               │
+         │   9b. Gemini callGeminiJSON():                         │
          │       parseText("biryani 25, skip fish curry")         │
          │       Returns: [{item: "biryani", qty: 25},            │
          │                 {item: "fish_curry", qty: 0}]          │
          │                                                        │
-         │   9b. UPDATE predictions SET                           │
-         │         owner_override = [parsed qty],                 │
-         │         confirmed = true                               │
-         │       for each edited item                             │
+         │   10b. UPDATE predictions SET                          │
+         │          owner_override = [parsed qty],                │
+         │          confirmed = true                              │
+         │        for each edited item                            │
          │                                                        │
-         │   10b. Twilio reply: lists updated quantities          │
+         │   11b. Meta reply: lists updated quantities            │
          │                                                  ◄─────┘
          │
          └── No reply by 9:30 AM ──────────────────────────────┐
                                                                │
              9:15 AM follow-up job fires (node-cron)           │
-             Sends: "Did you see today's prep sheet?"          │
+             Sends buttons again: "Did you see today's prep?"  │
                                                                │
              If still no reply by 9:30 AM:                    │
              UPDATE predictions SET confirmed = true           │
@@ -355,12 +383,12 @@ The bot state machine reads and writes this table on every incoming message. `co
 
 ### 3C. Owner Sends Evening Voice Note Check-In
 
-**Trigger:** `node-cron` fires at 07:00 PM IST (13:30 UTC), Tuesday–Sunday.
+**Trigger:** `node-cron` fires at 07:00 PM IST, Tuesday–Sunday.
 
 ```
-[node-cron: 13:30 UTC]
+[node-cron: 7:00 PM IST]
          │
-         │  1. Send evening prompt via Twilio:
+         │  1. Send evening prompt via Meta Cloud API:
          │     "Hi Sam! How did today go? 🌇
          │      Anything to flag — stockouts, big groups,
          │      power cuts, or anything worth remembering?"
@@ -373,55 +401,44 @@ The bot state machine reads and writes this table on every incoming message. `co
          │  Now waiting for Sam's reply...
          │
 ╔════════╧═══════════════════════════════════════════════════════╗
-║  SAM SENDS A VOICE NOTE                                        ║
+║  SAM SENDS A VOICE NOTE (or text)                              ║
 ╚════════╤═══════════════════════════════════════════════════════╝
          │
          ▼
-[Twilio webhook: POST /webhook/whatsapp]
+[Meta webhook: POST /webhook/whatsapp]
          │
-         │  3. Incoming message contains:
-         │     MediaUrl0    = https://api.twilio.com/...ogg
-         │     MediaContentType0 = audio/ogg
+         │  3. Incoming message:
+         │     type = 'audio'
+         │     audio.id = media-id   ← Meta media ID, not a URL
          │
          ▼
-[Backend: download audio]
+[Backend: resolve audio URL then download]
          │
-         │  4. GET MediaUrl0
-         │     (authenticated with Twilio credentials)
-         │     Buffer downloaded in memory
-         │     Convert to base64 string
+         │  4a. GET graph.facebook.com/v17.0/{audio.id}
+         │      Headers: Authorization: Bearer META_ACCESS_TOKEN
+         │      Response: { url: "https://lookaside.fbsbx.com/..." }
          │
-         │     ⚠️ Do this immediately — Twilio URL expires in ~4 hours
+         │  4b. GET the resolved URL (also requires Bearer auth)
+         │      Buffer → base64 string
+         │      Content-Type → mimeType (typically audio/ogg)
          │
          ▼
 [Reply immediately to Sam]
          │
-         │  5. Twilio reply: "Got it, listening... ✓"
-         │     (avoids Sam thinking bot is broken during Claude latency)
+         │  5. Meta API reply: "Got it, listening... 🎧"
+         │     (avoids Sam thinking bot is broken during Gemini latency)
          │
          ▼
-[Claude API call — async, background]
+[Gemini API call — multimodal audio + text]
          │
-         │  6. POST https://api.anthropic.com/v1/messages
-         │     model: claude-sonnet-4-20250514
-         │     system: "Transcribe this cafe owner's voice note.
-         │              Extract: stockouts, demand_spike,
-         │              power_disruption, weather_impact, other_notes.
-         │              Return ONLY valid JSON. No markdown.
-         │              Owner may speak English/Hindi/Konkani."
-         │     messages: [{
-         │       role: user,
-         │       content: [
-         │         { type: document,
-         │           source: { type: base64,
-         │                     media_type: audio/ogg,
-         │                     data: [base64 string] }},
-         │         { type: text, text: "Transcribe and extract signals." }
-         │       ]
-         │     }]
+         │  6. callGeminiJSON(SYSTEM_PROMPT_B, [text_part, audio_part], 800, signalSchema)
+         │     audio_part: { inlineData: { mimeType: 'audio/ogg', data: base64 } }
+         │     Schema enforces: transcription + stockouts + demand_spike +
+         │                      power_disruption + weather_impact + other_notes
+         │     No separate transcription step — Gemini handles both in one call
          │
          ▼
-[Claude returns JSON]
+[Gemini returns JSON]
          │
          │  7. Response: {
          │       "transcription": "Biryani ran out around 12:30...",
@@ -457,7 +474,7 @@ The bot state machine reads and writes this table on every incoming message. `co
          │       • Power cut logged ~6pm, 2 hours
          │       • Office group noted — watching for pattern"
          │
-         │  12. Send via Twilio
+         │  12. Send via Meta Cloud API
          │
          ▼
 [Update bot_state]
@@ -550,11 +567,11 @@ The bot state machine reads and writes this table on every incoming message. `co
          │  Message text: "order rice 5kg, dal 3kg, oil 2kg → Rice Vendor"
          │
          ▼
-[Twilio webhook: POST /webhook/whatsapp]
+[Meta webhook: POST /webhook/whatsapp]
          │
-         │  1. Validate Twilio signature (HMAC-SHA1)
-         │     Check MessageSid against processed_webhooks
-         │     (dedup — Twilio occasionally re-delivers)
+         │  1. Validate Meta signature (HMAC-SHA256)
+         │     Check message_id against processed_webhooks
+         │     (dedup — Meta occasionally re-delivers)
          │
          ▼
 [Bot router: detect intent]
@@ -566,18 +583,13 @@ The bot state machine reads and writes this table on every incoming message. `co
          │     → route to handleVendorOrder()
          │
          ▼
-[Claude API: parse vendor order]
+[Gemini API: parse vendor order]
          │
-         │  4. POST https://api.anthropic.com/v1/messages
-         │     system: "Extract vendor order from Sam's message.
-         │              Return ONLY valid JSON. No markdown.
-         │              Schema: { items: [{name, qty, unit,
-         │              price_per_unit}], vendor_name, delivery_date }"
-         │     messages: [{ role: user,
-         │                  content: "order rice 5kg, dal 3kg,
-         │                            oil 2kg → Rice Vendor" }]
+         │  4. callGeminiJSON(SYSTEM_PROMPT_VENDOR, message, 500, vendorSchema)
+         │     Schema enforced by Gemini:
+         │     { items: [{name, qty, unit, price_per_unit}], vendor_name, delivery_date }
          │
-         │  Claude returns:
+         │  Gemini returns:
          │  {
          │    "items": [
          │      {"name": "rice", "qty": 5, "unit": "kg", "price_per_unit": null},
@@ -619,20 +631,22 @@ The bot state machine reads and writes this table on every incoming message. `co
                   delivery_date: tomorrow,                   │
                   status: "pending_delivery" }               │
                                                             │
-             8. Twilio reply to Sam:                        │
+             8. Meta API reply to Sam:                      │
                 "Logged ✓                                   │
                                                             │
                  Ready to send to Rice Vendor:              │
                                                             │
-                 "Rice 5kg, Dal 3kg, Oil 2kg —              │
-                  please deliver tomorrow morning."         │
+                 Rice 5kg, Dal 3kg, Oil 2kg —               │
+                 please deliver tomorrow morning.           │
                                                             │
                  Forward this message to place the order."  │
+                 (vendor message text generated by Gemini   │
+                  to sound like Sam wrote it personally)    │
                                                             │
              9. Update bot_state: current_state = 'idle'   │
                                                       ◄─────┘
 
-[Sam forwards the quoted text message to Rice Vendor in WhatsApp manually]
+[Sam copies and forwards the vendor message to Rice Vendor in WhatsApp manually]
 ```
 
 ---
@@ -720,95 +734,107 @@ Offline: [amber banner at top of all screens]
 
 ---
 
-## 5. Claude API — When, What, Why
+## 5. Gemini API — When, What, Why
 
-Claude is called in exactly four situations. It is never called for anything that can be done with deterministic logic.
+Gemini is called in exactly five situations. It is never called for anything that can be done with deterministic logic.
 
-### Call 1: Evening Check-In — Voice Note Parsing
+### Call 1: Morning Prep Sheet — Message Formatting
+
+| Attribute | Value |
+|---|---|
+| Trigger | Morning prep job at 8:00 AM IST |
+| Input | Prediction data, weather note, festival flag, day of week |
+| Goal | Format predictions into a warm, natural WhatsApp message |
+| Output | Plain text, under 1,000 characters |
+| Max tokens | 600, temperature 0.7 |
+| Fallback | Deterministic bullet list if Gemini fails — prep sheet still sends |
+
+### Call 2: Evening Check-In — Voice Note Parsing (multimodal)
 
 | Attribute | Value |
 |---|---|
 | Trigger | Sam sends a voice note to the evening check-in prompt |
-| When | 7–10 PM IST, daily |
-| Input | base64-encoded `.ogg` audio file |
-| System prompt goal | Transcribe + extract structured operational signals |
-| Expected output | JSON: `{ transcription, stockouts, demand_spike, power_disruption, weather_impact, other_notes }` |
+| Input | base64-encoded `.ogg` audio (inlineData) + text instruction |
+| Goal | Transcribe voice note + extract structured operational signals in one call |
+| Output | JSON: `{ transcription, stockouts, demand_spike, power_disruption, weather_impact, other_notes }` |
 | Max tokens | 800 |
-| Latency tolerance | 3–5 seconds (bot replies immediately with "Got it..." then processes async) |
-| Fallback | API failure → store raw text only in checkins table; bot replies "Got it Sam, I saved your note ✓" |
+| Latency tolerance | 3–5 seconds (bot replies "Got it, listening..." first) |
+| Fallback | API failure → store raw mediaUrl in checkins; bot replies "Got it Sam, I saved your note ✓" |
 
-### Call 2: Evening Check-In — Text Parsing (fallback to voice)
+### Call 3: Evening Check-In — Text Parsing
 
 | Attribute | Value |
 |---|---|
-| Trigger | Sam sends a text response to the evening check-in prompt |
-| Input | Raw text string (English/Hindi/Konkani) |
-| System prompt goal | Same signal extraction as voice note, no transcription step |
-| Expected output | Same JSON schema as Call 1 (minus `transcription` field) |
+| Trigger | Sam sends text to the evening check-in prompt |
+| Input | Raw text (English/Hindi/Konkani) |
+| Goal | Extract same signals as Call 2 without transcription |
+| Output | Same JSON schema minus `transcription` field |
 | Max tokens | 500 |
 
-### Call 3: Free-Text Command Parsing (vendor orders, prep sheet edits, wastage log)
+### Call 4: Free-Text Command Parsing (vendor orders, prep edits, wastage log)
 
 | Attribute | Value |
 |---|---|
-| Trigger | Any of: vendor order message, prep sheet edit, wastage log response |
+| Trigger | Vendor order message, prep sheet edit, wastage log response |
 | Input | Sam's raw message text |
-| System prompt goal | Extract structured data: items + quantities + units + optional vendor/prices |
-| Expected output | Task-specific JSON schema (varies by command — see PRD Section 4A) |
+| Goal | Extract structured data: items + quantities + units + optional vendor/prices |
+| Output | Task-specific JSON schema enforced via `responseSchema` |
 | Max tokens | 500 |
-| Latency tolerance | 2–3 seconds (bot reply waits for this) |
-| Fallback | JSON parse failure → strip markdown fences, retry parse. Still fails → reply "I didn't quite get that — try: order [items] → [vendor name]" |
+| Fallback | `null` returned → bot replies "I didn't quite get that — try: order [items] → [vendor name]" |
 
-### Call 4: Weekly Sunday Summary — Actionable Suggestion
+### Call 5: Vendor Message Generation and Weekly Summary
 
 | Attribute | Value |
 |---|---|
-| Trigger | Sunday 9 PM automated job |
-| Input | Week's aggregated data: top seller, most wastage, revenue change |
-| System prompt goal | Generate one short, actionable sentence Sam can act on |
-| Expected output | Plain text, one sentence, ≤ 25 words |
-| Max tokens | 100 |
-| Fallback | API failure → omit the suggestion line from the summary |
+| Trigger | Vendor order confirmed; Sunday 9 PM summary job |
+| Input | Structured order/stats data |
+| Goal | Generate natural-language WhatsApp message that sounds like Sam wrote it |
+| Output | Plain text |
+| Max tokens | 300–500, temperature 0.5–0.7 |
+| Fallback | Deterministic plaintext fallback for both |
 
-### Claude API — Implementation Pattern
+### Gemini — Implementation Pattern
 
 ```javascript
-// services/claudeService.js
+// services/geminiService.js
+const { GoogleGenAI } = require('@google/genai')
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
 
-async function callClaude(systemPrompt, userContent, maxTokens = 500) {
+// For JSON extraction with schema enforcement
+async function callGeminiJSON(systemPrompt, userMessage, maxTokens, schema) {
   try {
-    const response = await axios.post(
-      'https://api.anthropic.com/v1/messages',
-      {
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: maxTokens,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userContent }]
-      },
-      {
-        headers: {
-          'x-api-key': process.env.CLAUDE_API_KEY,
-          'anthropic-version': '2023-06-01',
-          'content-type': 'application/json'
-        },
-        timeout: 10000  // 10s hard timeout
-      }
-    )
-
-    const rawText = response.data.content[0].text
-    // Strip markdown fences if Claude wraps output despite instructions
-    const clean = rawText.replace(/```json\n?|```/g, '').trim()
-    return JSON.parse(clean)
-
+    const result = await ai.models.generateContent({
+      model: 'gemini-2.0-flash',
+      config: { systemInstruction: systemPrompt, maxOutputTokens: maxTokens,
+                responseMimeType: 'application/json', responseSchema: schema },
+      contents: typeof userMessage === 'string'
+        ? [{ role: 'user', parts: [{ text: userMessage }] }]
+        : [{ role: 'user', parts: userMessage }]
+    })
+    return JSON.parse(result.text)
   } catch (err) {
-    // Log full error for debugging; return null to trigger fallback
-    console.error('[Claude API Error]', err.message, err.response?.data)
+    console.error('[Gemini JSON Error]', err.message)
+    return null
+  }
+}
+
+// For plain text generation (prep sheet, vendor messages, weekly summary)
+async function callGemini(systemPrompt, userMessage, maxTokens, temperature = 0.5) {
+  try {
+    const result = await ai.models.generateContent({
+      model: 'gemini-2.0-flash',
+      config: { systemInstruction: systemPrompt, maxOutputTokens: maxTokens, temperature },
+      contents: [{ role: 'user', parts: [{ text: userMessage }] }]
+    })
+    return result.text?.trim() || null
+  } catch (err) {
+    console.error('[Gemini Error]', err.message)
     return null
   }
 }
 ```
 
-Every call site checks for `null` return and handles gracefully. Claude failures must never block the bot from responding to Sam.
+Every call site checks for `null` return and handles gracefully. Gemini failures must never block the bot from responding to Sam.
 
 ---
 
@@ -879,7 +905,7 @@ CafeOS has two user types with fundamentally different permissions. Security is 
 |---|---|---|---|
 | Staff | 4-digit PIN → backend verifies bcrypt hash → issues JWT | Short-lived JWT (staff role claim) | Midnight daily (enforced by client) |
 | Owner | Email + password via Supabase Auth | Supabase JWT (owner role claim) | 7 days |
-| Bot (Sam via WhatsApp) | Twilio webhook signature (HMAC-SHA1) | N/A — server-to-server | Per request |
+| Bot (Sam via WhatsApp) | Meta webhook signature (HMAC-SHA256, `x-hub-signature-256`) | N/A — server-to-server | Per request |
 
 ### Layer 1: PWA routing
 
@@ -979,9 +1005,9 @@ CREATE POLICY "owner_full_access" ON orders
 
 ### WhatsApp bot security
 
-- All incoming Twilio webhooks are validated with `twilio.validateRequest()` before any processing.
-- Unknown phone numbers (not `SAM_WHATSAPP_TO`) receive no response. The bot simply ignores them (configurable to respond with a rejection message per OQ-09).
-- `MessageSid` deduplication prevents replay attacks or double-processing.
+- All incoming Meta webhooks are validated with HMAC-SHA256 (`x-hub-signature-256` header) using `META_APP_SECRET` before any processing. Requires raw body preservation in Express.
+- Unknown phone numbers (not `SAM_WHATSAPP_TO`) receive no response. The bot simply ignores them after deduplication.
+- Message ID (`message_sid`) deduplication via `processed_webhooks` table (unique constraint) prevents replay attacks or double-processing. Uses atomic insert — a duplicate insert throws `23505`, which is the bail-out signal.
 
 ---
 
@@ -997,22 +1023,24 @@ Design principle: **Sam must never see a broken experience.** Every external dep
 | Supabase down during morning prep sheet | Predictions cannot be saved | Job retries once after 60s. If still failing, prep sheet is skipped for the day and error is logged to Render logs. |
 | Supabase down during sync endpoint | Offline orders queue | IndexedDB order stays as `synced: false`. Retried on next app open or online event. No order is lost. |
 
-### Twilio (WhatsApp delivery)
+### Meta Cloud API (WhatsApp delivery)
 
 | Scenario | Impact | Fallback |
 |---|---|---|
-| Twilio API down (send fails) | Sam doesn't receive the scheduled message | Error logged. No retry for scheduled messages (next day's job fires normally). For bot replies mid-conversation: error logged; bot_state remains in current state so Sam can resend and bot will pick up where it left off. |
-| Twilio webhook unreachable | Incoming messages from Sam are not processed | Twilio retries webhook delivery for up to 8 hours. Once Render recovers, queued webhooks are delivered. |
-| Sandbox session expires | Sam must re-join sandbox | Resolved in Week 6–7 by upgrading to a verified Twilio sender before the demo. |
+| Meta API down (send fails) | Sam doesn't receive the scheduled message | Error logged. No retry for scheduled messages (next day's job fires normally). For bot replies mid-conversation: error logged; bot_state remains in current state so Sam can resend and bot will pick up where it left off. |
+| Meta webhook unreachable | Incoming messages from Sam are not processed | Meta retries webhook delivery. Once Render recovers, queued webhooks are delivered. |
+| Access token expires | All outgoing messages fail | Error logged. Developers must refresh token in Meta Business Manager. Use a permanent System User token to avoid this. |
+| Meta temporary dev token (24h expiry) | Same as above | Replace with permanent system user token before demo week. |
 
-### Claude API
+### Gemini API
 
 | Scenario | Impact | Fallback |
 |---|---|---|
-| Voice note transcription fails | Signals not extracted | Store raw text in `checkins.raw_text` only. Bot replies: "Got it Sam, I saved your note ✓". No signals used for that day's predictions. |
+| Voice note transcription fails | Signals not extracted | Store raw mediaUrl in `checkins.raw_text` only. Bot replies: "Got it Sam, I saved your note ✓". No signals used for that day's predictions. |
 | Vendor order parsing fails | Order not logged | Bot replies: "I didn't quite get that — try: order [items] → [vendor name]". Nothing written to DB. |
-| Prep sheet edit parsing fails | Sam's override not applied | Bot replies: "Sorry, I couldn't parse that — could you try again? e.g. biryani 25, fish curry 10". Original predictions remain. |
-| Weekly summary suggestion fails | No suggestion in weekly digest | Suggestion line omitted. All other 5 metrics still sent. |
+| Prep sheet edit parsing fails | Sam's override not applied | Bot replies gracefully. Original predictions remain. |
+| Prep sheet message formatting fails | Raw data list sent instead | Deterministic bullet-list fallback always ready. Prep sheet sends regardless. |
+| Weekly summary formatting fails | Raw stats summary sent instead | Deterministic plaintext fallback. All metrics still present. |
 
 ### Open-Meteo (weather)
 
@@ -1059,15 +1087,16 @@ All jobs run inside the Render Node.js process via `node-cron`. The cron-job.org
 
 | Job | Cron Expression (IST) | What it does |
 |---|---|---|
-| Morning prep sheet | `0 8 * * 2-7` | Generate predictions, call Open-Meteo, send to Sam via Twilio |
-| Prep sheet follow-up | `15 9 * * 2-7` | Gentle reminder if Sam hasn't replied |
-| Prep sheet auto-confirm | `30 9 * * 2-7` | Auto-confirm if still no response |
+| Morning prep sheet | `0 8 * * 2-7` | Generate predictions, call Open-Meteo, call Gemini for message, send interactive buttons to Sam via Meta |
+| Prep sheet follow-up | `15 9 * * 2-7` | Resend buttons if Sam hasn't replied |
+| Prep sheet auto-confirm | `30 9 * * 2-7` | Auto-confirm predictions if still no response |
 | Evening check-in prompt | `0 19 * * 2-7` | Send check-in prompt to Sam |
 | Nightly wastage prompt | `0 22 * * 0,2-7` | Send wastage log request (includes Sunday for Monday closure) |
+| Wastage auto-proceed | `45 22 * * 0,2-7` | Proceed with post-wastage flow if Sam didn't reply by 10:45 PM |
 | Google Sheets sync | `0 23 * * *` | Append day's data to 4 spreadsheet tabs |
-| Weekly Sunday summary | `0 21 * * 0` | Send 5-point weekly digest to Sam |
+| Weekly Sunday summary | `0 21 * * 0` | Send weekly digest with stats + prediction accuracy % |
 
-*All expressions use `node-cron` v3 with `{ timezone: 'Asia/Kolkata' }` option — do not manually convert to UTC.*
+*All expressions use `node-cron` v4 with `{ timezone: 'Asia/Kolkata' }` option — do not manually convert to UTC.*
 
 ---
 

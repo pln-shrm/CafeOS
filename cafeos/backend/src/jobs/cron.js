@@ -338,12 +338,38 @@ async function runWeeklySummaryJob() {
   const owed = [...balances.entries()].filter(([, amt]) => amt > 0)
   const owedTotal = owed.reduce((s, [, amt]) => s + amt, 0)
 
+  // Prediction accuracy
+  const { data: predAccs } = await supabase
+    .from('predictions')
+    .select('predicted_qty, sold_qty')
+    .gte('date', weekStart)
+    .lte('date', today)
+    .not('sold_qty', 'is', null)
+  
+  let accuracyLine = 'Prediction accuracy: N/A'
+  if (predAccs && predAccs.length > 0) {
+    let totalPred = 0
+    let totalSold = 0
+    let totalAbsError = 0
+    predAccs.forEach(p => {
+      totalPred += Number(p.predicted_qty)
+      totalSold += Number(p.sold_qty)
+      totalAbsError += Math.abs(Number(p.predicted_qty) - Number(p.sold_qty))
+    })
+    if (totalSold > 0) {
+      const mape = totalAbsError / totalSold
+      const accuracy = Math.max(0, 100 - (mape * 100)).toFixed(1)
+      accuracyLine = `Prediction accuracy: ${accuracy}%`
+    }
+  }
+
   const facts = `Week: ${weekStart} to ${today}
 Orders: ${orders.length}
 Revenue: ${formatRupees(revenue)}
 Top sellers: ${topItems.join(', ') || 'none'}
 Total portions wasted: ${totalWaste}
-Outstanding vendor credit: ${formatRupees(owedTotal)}${owed.length ? ` (${owed.map(([v, a]) => `${v} ${formatRupees(a)}`).join(', ')})` : ''}`
+Outstanding vendor credit: ${formatRupees(owedTotal)}${owed.length ? ` (${owed.map(([v, a]) => `${v} ${formatRupees(a)}`).join(', ')})` : ''}
+${accuracyLine}`
 
   let messageText = await callGemini(SYSTEM_PROMPT_WEEKLY, facts, 500, 0.5)
   if (!messageText) {
@@ -393,11 +419,6 @@ cron.schedule('45 22 * * 0,2-7', () => {
 cron.schedule('0 21 * * 0', () => {
   console.log(`[CRON] WEEKLY_SUMMARY fired at ${new Date().toISOString()}`)
   runWeeklySummaryJob().catch(err => console.error('[CRON] WEEKLY_SUMMARY failed', err))
-}, IST)
-
-// 11:00 PM Daily
-cron.schedule('0 23 * * *', () => {
-  console.log(`[CRON] SHEETS_SYNC fired at ${new Date().toISOString()}`)
 }, IST)
 
 console.log('[CRON] All jobs scheduled (Asia/Kolkata)')
