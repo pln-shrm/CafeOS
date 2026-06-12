@@ -34,7 +34,7 @@ const { handleMainMenuReply } = require('./handlers/handleMainMenuReply')
 const handleVendorSelectionReply = require('./handlers/handleVendorSelectionReply')
 const handleOrderVendorNameReply = require('./handlers/handleOrderVendorNameReply')
 const handleOrderItemsInteractiveReply = require('./handlers/handleOrderItemsInteractiveReply')
-const handleWhatElseReply = require('./handlers/handleWhatElseReply')
+const { handleWhatElseReply } = require('./handlers/handleWhatElseReply')
 const { whatsappButtons } = require('./handlers/helpers')
 
 const router = Router()
