@@ -290,7 +290,7 @@ router.post('/', async (req, res) => {
         isVoiceNote: isAudio,
         mediaUrl
       }).catch(err => {
-        console.error('[Webhook] Async processing failed', err)
+        console.error('[Webhook] Async processing failed:', err.response?.data ? JSON.stringify(err.response.data, null, 2) : err.message)
       })
     })
   } else {
