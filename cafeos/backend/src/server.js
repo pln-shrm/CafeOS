@@ -27,8 +27,9 @@ const { runMorningPrepJob } = require('./jobs/cron')
 const app = express()
 app.set('trust proxy', 1) // trust first proxy (Render, Railway, Heroku) for correct req.ip
 
-const allowedOrigins = process.env.FRONTEND_ORIGIN
-  ? process.env.FRONTEND_ORIGIN.split(',').map(s => s.trim())
+const envOrigin = process.env.FRONTEND_ORIGIN || process.env.ALLOWED_FRONTEND_URL
+const allowedOrigins = envOrigin
+  ? envOrigin.split(',').map(s => s.trim())
   : ['http://localhost:5173', 'http://localhost:3000']
 app.use(cors({ origin: allowedOrigins, credentials: true }))
 
