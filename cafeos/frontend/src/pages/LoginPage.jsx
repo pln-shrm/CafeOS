@@ -40,8 +40,8 @@ export default function LoginPage() {
       try {
         const res = await api.get('/api/staff/public')
         setStaffList(res.data.data.staff || [])
-      } catch {
-        setStaffLoadError('No internet — can\'t load staff list.')
+      } catch (err) {
+        setStaffLoadError(`Error: ${err.message} | URL: ${import.meta.env.VITE_API_BASE_URL || 'localhost'}`)
       } finally {
         setLoadingStaff(false)
       }
