@@ -2,7 +2,7 @@ const { Router } = require('express')
 const { formatInTimeZone, toZonedTime } = require('date-fns-tz')
 const { format } = require('date-fns')
 const supabase = require('../services/supabaseClient')
-const { staffAuthMiddleware, ownerAuthMiddleware } = require('../middleware/auth')
+const { staffAuthMiddleware, ownerAuthMiddleware, anyAuthMiddleware } = require('../middleware/auth')
 const { ok, fail } = require('../utils/response')
 
 const router = Router()
@@ -71,7 +71,7 @@ router.patch('/:id', staffAuthMiddleware, async (req, res) => {
 })
 
 // GET /api/attendance
-router.get('/', ownerAuthMiddleware, async (req, res) => {
+router.get('/', anyAuthMiddleware, async (req, res) => {
   const { staff_id, from, to, late_only } = req.query
 
   let query = supabase
@@ -80,7 +80,12 @@ router.get('/', ownerAuthMiddleware, async (req, res) => {
     .order('date', { ascending: false })
     .order('check_in_time', { ascending: false })
 
-  if (staff_id) query = query.eq('staff_id', staff_id)
+  if (req.role === 'staff') {
+    query = query.eq('staff_id', req.staffId)
+  } else if (staff_id) {
+    query = query.eq('staff_id', staff_id)
+  }
+
   if (from) query = query.gte('date', from)
   if (to) query = query.lte('date', to)
   if (late_only === 'true') query = query.eq('late', true)
