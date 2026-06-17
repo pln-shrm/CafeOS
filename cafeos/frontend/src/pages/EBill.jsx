@@ -8,7 +8,6 @@ function formatBillText(bill) {
     bill.cafe_name,
     bill.cafe_address,
     divider,
-    bill.bill_number ? `Bill #${bill.bill_number}` : 'Bill # (offline)',
     `${bill.date}  ${bill.time}`,
     `${bill.order_type === 'dine_in' ? 'Dine In' : 'Takeaway'} | ${bill.payment_method?.toUpperCase()}`,
     divider,
@@ -51,7 +50,7 @@ export default function EBill() {
     const text = formatBillText(bill)
     if (navigator.share) {
       try {
-        await navigator.share({ text, title: `Bill #${bill.bill_number || '–'}` })
+        await navigator.share({ text, title: `Bill` })
       } catch { /* user cancelled share */ }
     } else {
       try {
@@ -95,7 +94,6 @@ export default function EBill() {
 
         <div className="border-t border-dashed border-gray-300 pt-3 mb-3">
           <div className="flex justify-between text-xs text-gray-500 mb-1">
-            <span>Bill #{bill.bill_number ?? '–'}</span>
             <span>{bill.date}</span>
           </div>
           <div className="flex justify-between text-xs text-gray-500">
