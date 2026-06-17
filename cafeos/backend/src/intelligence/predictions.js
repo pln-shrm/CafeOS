@@ -52,6 +52,13 @@ async function fetchWeather() {
   }
 }
 
+/**
+ * Generates predictions for tomorrow's prep sheet based on historical actuals, 
+ * weather, day-of-week averages, stockout signals, and festival flags.
+ * @param {string} date - The target date for prediction (YYYY-MM-DD).
+ * @returns {Promise<{rows: Array, weather: Object, festivalName: string|null, eventName: string|null}>}
+ * @throws {Error} If database queries fail.
+ */
 async function generatePredictions(date) {
   const targetDow = dowOf(date)
   const fourteenDaysAgo = daysBefore(date, 14)
@@ -222,6 +229,12 @@ async function generatePredictions(date) {
   return { rows: upsertRows, weather: { precipitation, maxTemp }, festivalName, eventName: eventFlag?.description || null }
 }
 
+/**
+ * Confirms predictions for a past date, calculating the actual_qty based on
+ * sold items (from orders) plus left over items (from wastage logs).
+ * @param {string} date - The date to confirm predictions for (YYYY-MM-DD).
+ * @returns {Promise<void>}
+ */
 async function confirmPredictions(date) {
   // Aggregate sold quantities for the day
   const { data: todayOrders } = await supabase
@@ -275,6 +288,13 @@ async function confirmPredictions(date) {
   console.log(`[Predictions] Confirmed ${updates.length} predictions for ${date}`)
 }
 
+/**
+ * Scans today's wastage and sales for anomalies (e.g. over-prepping).
+ * Flags items where wastage > 40% of sales and absolute wastage >= 3 portions.
+ * @param {string} date - The date to check (YYYY-MM-DD).
+ * @param {Map<number, number>} wastageMap - Map of menu_item_id to quantity_left.
+ * @returns {Promise<Array<{item_id: number, name: string, wastage: number, sold: number}>>}
+ */
 async function detectAnomalies(date, wastageMap) {
   const { data: todayOrders } = await supabase
     .from('orders')

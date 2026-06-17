@@ -46,7 +46,7 @@ async function setBotState(phoneNumber, state, contextJson = null) {
   if (error) throw error
 }
 
-const ai = require('../../services/llmClient')
+const { aiClient: ai } = require('../../services/geminiService')
 
 async function parseVendorItems(text) {
   console.log(`[parseVendorItems] Input text: "${text}", ai client exists: ${!!ai}`)

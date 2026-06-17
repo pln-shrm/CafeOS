@@ -1,6 +1,6 @@
 {
-  "name": "BistroBot21",
-  "short_name": "BistroBot21",
+  "name": "CafeOS",
+  "short_name": "CafeOS",
   "start_url": "/orders",
   "display": "standalone",
   "background_color": "#ffffff",

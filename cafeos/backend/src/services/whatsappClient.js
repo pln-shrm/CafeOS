@@ -1,9 +1,16 @@
 const axios = require('axios')
 
+/**
+ * Sends a plain text WhatsApp message via Meta Cloud API.
+ * @param {string} to - The recipient's phone number with country code.
+ * @param {string} body - The text message body.
+ * @returns {Promise<Object>} The API response data.
+ * @throws {Error} If the API request fails.
+ */
 async function whatsappReply(to, body) {
   try {
     const response = await axios.post(
-      `https://graph.facebook.com/v17.0/${process.env.META_PHONE_NUMBER_ID}/messages`,
+      `https://graph.facebook.com/v22.0/${process.env.META_PHONE_NUMBER_ID}/messages`,
       {
         messaging_product: 'whatsapp',
         to: to,
@@ -28,6 +35,14 @@ async function whatsappReply(to, body) {
 // Meta limits: body ≤ 1024 chars, button title ≤ 20 chars.
 // Falls back to plain text with a reply hint if the body is too long or the send fails,
 // so flows never break on devices/situations where interactive messages don't work.
+/**
+ * Sends an interactive button message (up to 3 buttons) via Meta Cloud API.
+ * Falls back to plain text if limits are exceeded.
+ * @param {string} to - The recipient's phone number.
+ * @param {string} body - The message body (max 1024 chars).
+ * @param {Array<{id: string, title: string}>} [buttons=[]] - Array of buttons (max 3, titles max 20 chars).
+ * @returns {Promise<Object>} The API response data.
+ */
 async function whatsappButtons(to, body, buttons = []) {
   const valid = (buttons || []).slice(0, 3).map(b => ({
     type: 'reply',
@@ -45,7 +60,7 @@ async function whatsappButtons(to, body, buttons = []) {
 
   try {
     const response = await axios.post(
-      `https://graph.facebook.com/v17.0/${process.env.META_PHONE_NUMBER_ID}/messages`,
+      `https://graph.facebook.com/v22.0/${process.env.META_PHONE_NUMBER_ID}/messages`,
       {
         messaging_product: 'whatsapp',
         to: to,
@@ -73,6 +88,15 @@ async function whatsappButtons(to, body, buttons = []) {
 // Interactive list message — supports up to 10 rows, ideal for menus > 3 options.
 // rows: [{ id, title, description? }]  title ≤ 24 chars, description ≤ 72 chars.
 // Falls back to plain text on failure so flows never break.
+/**
+ * Sends an interactive list message (up to 10 rows) via Meta Cloud API.
+ * Falls back to plain text if limits are exceeded.
+ * @param {string} to - The recipient's phone number.
+ * @param {string} body - The message body (max 1024 chars).
+ * @param {string} buttonLabel - The text on the menu button (max 20 chars).
+ * @param {Array<{id: string, title: string, description?: string}>} [rows=[]] - Array of list rows (max 10).
+ * @returns {Promise<Object>} The API response data.
+ */
 async function whatsappList(to, body, buttonLabel, rows = []) {
   const validRows = (rows || []).slice(0, 10).map(r => {
     const row = { id: String(r.id), title: String(r.title).slice(0, 24) }
@@ -91,7 +115,7 @@ async function whatsappList(to, body, buttonLabel, rows = []) {
 
   try {
     const response = await axios.post(
-      `https://graph.facebook.com/v17.0/${process.env.META_PHONE_NUMBER_ID}/messages`,
+      `https://graph.facebook.com/v22.0/${process.env.META_PHONE_NUMBER_ID}/messages`,
       {
         messaging_product: 'whatsapp',
         to: to,

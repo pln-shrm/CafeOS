@@ -1,6 +1,6 @@
-# BistroBot21
+# CafeOS
 
-BistroBot21 is a WhatsApp-first cafe management system built for a small owner-operated cafe in Goa, India. It combines a WhatsApp bot (owner-facing) for vendor orders, prep predictions, and daily check-ins with a React PWA (staff + owner) for order taking, billing, and menu management — all backed by a shared Node.js/Express + Supabase backend.
+CafeOS is a WhatsApp-first cafe management system built for a small owner-operated cafe in Goa, India. It combines a WhatsApp bot (owner-facing) for vendor orders, prep predictions, and daily check-ins with a React PWA (staff + owner) for order taking, billing, and menu management — all backed by a shared Node.js/Express + Supabase backend.
 
 ## Running locally
 

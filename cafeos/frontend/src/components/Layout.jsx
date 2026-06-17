@@ -47,7 +47,7 @@ export default function Layout({ children }) {
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Top bar */}
       <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between sticky top-0 z-10">
-        <span className="text-lg font-bold text-gray-900">BistroBot21</span>
+        <span className="text-lg font-bold text-gray-900">CafeOS</span>
         <span className="text-sm font-medium text-gray-600">{user?.name || ''}</span>
         <button
           onClick={handleLogout}

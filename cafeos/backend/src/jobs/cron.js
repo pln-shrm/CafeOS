@@ -10,7 +10,7 @@ const { resumePostWastageFlow } = require('../bot/handlers/handleWastageReply')
 
 const IST = { timezone: 'Asia/Kolkata' }
 
-const SYSTEM_PROMPT_C = `You are BistroBot21, a friendly assistant for Sam's Cafe in Vasco da Gama, Goa.
+const SYSTEM_PROMPT_C = `You are CafeOS, a friendly assistant for Sam's Cafe in Vasco da Gama, Goa.
 Generate the morning prep sheet WhatsApp message for Sam.
 Use warm, plain English. Short sentences. No jargon.
 Format rupee amounts as ₹X,XXX. Portions as whole numbers.
@@ -276,7 +276,7 @@ function daysAgoIST(n) {
   return formatInTimeZone(new Date(Date.now() - n * 86400000), 'Asia/Kolkata', 'yyyy-MM-dd')
 }
 
-const SYSTEM_PROMPT_WEEKLY = `You are BistroBot21, a friendly assistant for Sam's Cafe in Goa.
+const SYSTEM_PROMPT_WEEKLY = `You are CafeOS, a friendly assistant for Sam's Cafe in Goa.
 Turn the facts below into Sam's weekly summary WhatsApp message.
 Warm, plain English. Short lines. Format rupees as ₹X,XXX.
 Open exactly with: "Hi Sam! Here's your week 📊"
@@ -341,10 +341,10 @@ async function runWeeklySummaryJob() {
   // Prediction accuracy
   const { data: predAccs } = await supabase
     .from('predictions')
-    .select('predicted_qty, sold_qty')
+    .select('predicted_qty, actual_qty')
     .gte('date', weekStart)
     .lte('date', today)
-    .not('sold_qty', 'is', null)
+    .not('actual_qty', 'is', null)
   
   let accuracyLine = 'Prediction accuracy: N/A'
   if (predAccs && predAccs.length > 0) {
@@ -353,8 +353,8 @@ async function runWeeklySummaryJob() {
     let totalAbsError = 0
     predAccs.forEach(p => {
       totalPred += Number(p.predicted_qty)
-      totalSold += Number(p.sold_qty)
-      totalAbsError += Math.abs(Number(p.predicted_qty) - Number(p.sold_qty))
+      totalSold += Number(p.actual_qty)
+      totalAbsError += Math.abs(Number(p.predicted_qty) - Number(p.actual_qty))
     })
     if (totalSold > 0) {
       const mape = totalAbsError / totalSold

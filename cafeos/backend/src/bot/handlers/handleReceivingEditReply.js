@@ -19,7 +19,7 @@ const schemaReceivingEdit = {
   }
 }
 
-const SYSTEM_PROMPT_RECEIVING_EDIT = `You are BistroBot21. The user is editing a received vendor order.
+const SYSTEM_PROMPT_RECEIVING_EDIT = `You are CafeOS. The user is editing a received vendor order.
 Update the JSON array of items based on the user's modifications.
 If they say "only 4kg tomatoes", change the tomatoes quantity to 4. If they say "no milk", remove milk or set qty to 0.
 Return the complete updated list of items.`

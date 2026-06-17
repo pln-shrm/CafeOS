@@ -156,7 +156,7 @@ router.patch('/orders/:id/status', ownerAuthMiddleware, async (req, res) => {
     .from('procurement')
     .update({ status })
     .eq('id', id)
-    .select('id', 'status')
+    .select('id, status')
     .single()
 
   if (updateErr) throw updateErr

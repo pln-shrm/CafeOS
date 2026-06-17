@@ -1,8 +1,23 @@
 const { GoogleGenAI } = require('@google/genai');
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+let ai = null;
+if (!process.env.GEMINI_API_KEY) {
+  console.warn('[Gemini Service] GEMINI_API_KEY is not set. AI features will fallback or fail.');
+} else {
+  ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+}
 
+/**
+ * Calls the Gemini API with a system prompt and user content.
+ * @param {string} systemPrompt - The system instruction/persona.
+ * @param {string|Array} userContent - The user's input message or multimodal content.
+ * @param {number} [maxTokens=500] - Maximum output tokens.
+ * @param {number} [temperature=0] - Model temperature (0 for deterministic, 1 for creative).
+ * @param {Object} [options={}] - Additional config options (e.g., responseMimeType).
+ * @returns {Promise<string|null>} The trimmed response text, or null if it fails.
+ */
 async function callGemini(systemPrompt, userContent, maxTokens = 500, temperature = 0, options = {}) {
+  if (!ai) return null;
   try {
     const config = {
       systemInstruction: systemPrompt,
@@ -28,6 +43,14 @@ async function callGemini(systemPrompt, userContent, maxTokens = 500, temperatur
   }
 }
 
+/**
+ * Calls the Gemini API and parses the response as JSON.
+ * @param {string} systemPrompt - The system instruction.
+ * @param {string} userContent - The user's input message.
+ * @param {number} [maxTokens=500] - Maximum output tokens.
+ * @param {Object} [schema=null] - Optional JSON schema for structured output.
+ * @returns {Promise<Object|null>} The parsed JSON object, or null if it fails to parse.
+ */
 async function callGeminiJSON(systemPrompt, userContent, maxTokens = 500, schema = null) {
   const options = { responseMimeType: 'application/json' };
   if (schema) {
@@ -45,4 +68,4 @@ async function callGeminiJSON(systemPrompt, userContent, maxTokens = 500, schema
   }
 }
 
-module.exports = { callGemini, callGeminiJSON };
+module.exports = { callGemini, callGeminiJSON, aiClient: ai };

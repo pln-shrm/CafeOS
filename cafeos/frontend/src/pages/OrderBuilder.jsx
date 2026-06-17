@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import api from '../lib/api'
+import { queueOrder } from '../lib/db'
 
 function groupByCategory(items) {
   const map = {}
@@ -42,6 +43,7 @@ export default function OrderBuilder() {
   const [showDiscardModal, setShowDiscardModal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
     async function fetchMenu() {
@@ -122,13 +124,34 @@ export default function OrderBuilder() {
       }
       navigate('/staff/orders')
     } catch (err) {
-      setSaveError(err.response?.data?.error?.message || 'Failed to save order')
+      if (!navigator.onLine || !err.response) {
+        if (editOrder) {
+          setSaveError('Cannot edit orders while offline.')
+        } else {
+          await queueOrder({
+            localUuid,
+            order_type: orderType,
+            payment_method: 'pending',
+            table_number: tableNumber,
+            customer_name: customerName,
+            contact_info: contactInfo,
+            items: cartItems
+          })
+          window.dispatchEvent(new Event('cafeos:order-queued'))
+          navigate('/staff/orders')
+        }
+      } else {
+        setSaveError(err.response?.data?.error?.message || 'Failed to save order')
+      }
     } finally {
       setSaving(false)
     }
   }
 
-  const categories = groupByCategory(menuItems)
+  const filteredMenuItems = menuItems.filter(item => 
+    item.name.toLowerCase().includes(searchQuery.toLowerCase())
+  )
+  const categories = groupByCategory(filteredMenuItems)
 
   return (
     <div className="flex flex-col flex-1 min-h-0 bg-gray-50">
@@ -215,6 +238,15 @@ export default function OrderBuilder() {
 
         {/* Menu list */}
         <div className="px-4 mt-2">
+          <div className="mb-4">
+            <input
+              type="text"
+              placeholder="Search menu..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="w-full border border-gray-300 rounded-xl px-4 py-2 outline-none focus:border-gray-900 bg-white"
+            />
+          </div>
           {menuLoading && <p className="text-gray-400 text-sm py-6 text-center">Loading menu…</p>}
           {menuError && (
             <div className="py-10 text-center">

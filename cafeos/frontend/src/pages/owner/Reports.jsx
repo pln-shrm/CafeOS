@@ -38,8 +38,6 @@ export default function Reports() {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [exporting, setExporting] = useState(false)
-  const [exportMessage, setExportMessage] = useState('')
 
   const { from, to } = useMemo(() => {
     const now = istNow()
@@ -138,41 +136,13 @@ export default function Reports() {
     return Array.from(map.values()).sort((a, b) => b.units - a.units)
   }, [orders])
 
-  async function handleExport() {
-    setExporting(true)
-    setExportMessage('')
-    try {
-      await api.post('/api/sheets/sync')
-      setExportMessage('Exported to Google Sheets ✓')
-    } catch {
-      setExportMessage('Export failed — try again')
-    } finally {
-      setExporting(false)
-    }
-  }
+
 
   return (
     <div className="flex flex-col flex-1 px-5 pt-6 pb-8 gap-5">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold text-gray-900">Reports</h1>
-        <button
-          onClick={handleExport}
-          disabled={exporting}
-          className="px-4 py-2 rounded-xl bg-gray-900 text-white text-sm font-semibold disabled:opacity-60"
-        >
-          {exporting ? 'Exporting…' : 'Export to Sheets'}
-        </button>
       </div>
-
-      {exportMessage && (
-        <div className={`text-sm rounded-xl px-3 py-2 border ${
-          exportMessage.includes('failed')
-            ? 'text-amber-700 bg-amber-50 border-amber-200'
-            : 'text-green-700 bg-green-50 border-green-200'
-        }`}>
-          {exportMessage}
-        </div>
-      )}
 
       <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 flex flex-col gap-3">
         <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Date Range</h2>

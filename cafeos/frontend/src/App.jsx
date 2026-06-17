@@ -13,6 +13,9 @@ async function triggerSync() {
       local_uuid: o.localUuid,
       order_type: o.order_type,
       payment_method: o.payment_method,
+      table_number: o.table_number,
+      customer_name: o.customer_name,
+      contact_info: o.contact_info,
       items: o.items
     }))
 
