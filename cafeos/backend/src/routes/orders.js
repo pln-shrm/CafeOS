@@ -149,9 +149,9 @@ router.post('/', staffAuthMiddleware, async (req, res) => {
 router.get('/ongoing', staffAuthMiddleware, async (req, res) => {
   const { data, error } = await supabase
     .from('orders')
-    .select('id, local_uuid, bill_number, bill_date, total, order_type, table_number, customer_name, status, created_at, order_items(menu_item_id, quantity, unit_price, menu_items(name))')
+    .select('id, local_uuid, bill_number, bill_date, total, order_type, table_number, customer_name, status, timestamp, order_items(menu_item_id, quantity, unit_price, menu_items(name))')
     .eq('status', 'ongoing')
-    .order('created_at', { ascending: true })
+    .order('timestamp', { ascending: true })
 
   if (error) throw error
   return ok(res, { orders: data || [] })
@@ -270,9 +270,9 @@ router.get('/', ownerAuthMiddleware, async (req, res) => {
 
   let query = supabase
     .from('orders')
-    .select('id, bill_date, total, payment_method, order_type, table_number, customer_name, status, created_at, order_items(menu_item_id, quantity, unit_price, menu_items(name))')
+    .select('id, bill_date, total, payment_method, order_type, table_number, customer_name, status, timestamp, order_items(menu_item_id, quantity, unit_price, menu_items(name))')
     .order('bill_date', { ascending: false })
-    .order('created_at', { ascending: false })
+    .order('timestamp', { ascending: false })
     .limit(limit)
 
   if (from) query = query.gte('bill_date', from)
@@ -288,10 +288,10 @@ router.get('/staff-history', staffAuthMiddleware, async (req, res) => {
   const limit = 50
   const { data, error } = await supabase
     .from('orders')
-    .select('id, local_uuid, bill_number, bill_date, total, order_type, table_number, customer_name, status, created_at, order_items(menu_item_id, quantity, unit_price, menu_items(name))')
+    .select('id, local_uuid, bill_number, bill_date, total, order_type, table_number, customer_name, status, timestamp, order_items(menu_item_id, quantity, unit_price, menu_items(name))')
     .eq('status', 'completed')
     .eq('staff_id', req.staffId)
-    .order('created_at', { ascending: false })
+    .order('timestamp', { ascending: false })
     .limit(limit)
 
   if (error) throw error
@@ -302,7 +302,7 @@ router.get('/:id', anyAuthMiddleware, async (req, res) => {
   const { data: order, error } = await supabase
     .from('orders')
     .select(`
-      id, bill_number, bill_date, order_type, payment_method, total, created_at, status, table_number, customer_name, contact_info,
+      id, bill_number, bill_date, order_type, payment_method, total, timestamp, status, table_number, customer_name, contact_info,
       order_items(id, menu_item_id, quantity, unit_price, menu_items(name)),
       staff:staff_id(name)
     `)
@@ -327,7 +327,7 @@ router.get('/:id/bill', anyAuthMiddleware, async (req, res) => {
   const { data: order, error } = await supabase
     .from('orders')
     .select(`
-      id, bill_number, bill_date, order_type, payment_method, total, created_at, status, customer_name, table_number,
+      id, bill_number, bill_date, order_type, payment_method, total, timestamp, status, customer_name, table_number,
       order_items(quantity, unit_price, menu_items(name))
     `)
     .eq('id', req.params.id)
@@ -336,7 +336,7 @@ router.get('/:id/bill', anyAuthMiddleware, async (req, res) => {
   if (error) throw error
   if (!order) return fail(res, 'NOT_FOUND', 'Order not found', 404)
 
-  const createdIST = toZonedTime(new Date(order.created_at), IST)
+  const createdIST = toZonedTime(new Date(order.timestamp), IST)
 
   return ok(res, {
     cafe_name: "BistroBot21",
