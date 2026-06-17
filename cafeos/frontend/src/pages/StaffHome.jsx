@@ -122,7 +122,7 @@ export default function StaffHome() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
             <span className="font-medium text-sm">
-              Checked in at {formatCheckInTime(attendance)}
+              Checked in for {formatDateIST()} at {formatCheckInTime(attendance)}
               {attendance.late ? ' — Late' : ' ✓'}
             </span>
           </div>
