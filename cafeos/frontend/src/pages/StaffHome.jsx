@@ -135,13 +135,19 @@ export default function StaffHome() {
         <p className="text-gray-800 text-sm">Your orders today: <span className="font-bold text-gray-900">{orderCount}</span></p>
       </div>
 
-      {/* New Order — primary CTA */}
-      <div className="mt-auto">
+      {/* New Order & My Orders — primary CTAs */}
+      <div className="mt-auto flex flex-col gap-3">
         <button
           onClick={() => navigate('/staff/order/new')}
           className="w-full py-5 rounded-2xl bg-gray-900 text-white text-lg font-bold active:bg-gray-700 transition-colors"
         >
           New Order
+        </button>
+        <button
+          onClick={() => navigate('/staff/orders')}
+          className="w-full py-5 rounded-2xl bg-white border-2 border-gray-900 text-gray-900 text-lg font-bold active:bg-gray-100 transition-colors"
+        >
+          My Orders
         </button>
       </div>
 

@@ -4,6 +4,7 @@ import Layout from './components/Layout'
 
 import LoginPage from './pages/LoginPage'
 import StaffHome from './pages/StaffHome'
+import StaffOrders from './pages/StaffOrders'
 import OrderBuilder from './pages/OrderBuilder'
 import BillPreview from './pages/BillPreview'
 import EBill from './pages/EBill'
@@ -44,6 +45,14 @@ const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <StaffHome />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/staff/orders',
+    element: (
+      <ProtectedRoute>
+        <StaffOrders />
       </ProtectedRoute>
     )
   },
