@@ -38,7 +38,7 @@ router.post('/checkin', staffAuthMiddleware, async (req, res) => {
       date: todayIST,
       check_in_time: now.toISOString(),
       late: isLate,
-      note: note || null
+      late_reason: note || null
     })
     .select()
     .single()
@@ -58,7 +58,7 @@ router.patch('/:id', staffAuthMiddleware, async (req, res) => {
 
   const { data, error } = await supabase
     .from('attendance')
-    .update({ note: note || null })
+    .update({ late_reason: note || null })
     .eq('id', id)
     .eq('staff_id', req.staffId)
     .select()

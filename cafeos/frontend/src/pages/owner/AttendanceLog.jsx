@@ -135,7 +135,7 @@ export default function AttendanceLog() {
               <span>{record.staff?.name || '-'}</span>
               <span className={record.check_in_time ? '' : 'text-gray-400'}>{formatTime(record.check_in_time)}</span>
               <span>{record.late ? 'Yes' : 'No'}</span>
-              <span className={record.note ? '' : 'text-gray-400'}>{record.note || '-'}</span>
+              <span className={record.late_reason ? '' : 'text-gray-400'}>{record.late_reason || '-'}</span>
             </div>
           ))}
           {!loading && records.length === 0 && (
