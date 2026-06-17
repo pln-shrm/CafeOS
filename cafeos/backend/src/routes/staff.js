@@ -84,17 +84,7 @@ router.post('/', ownerAuthMiddleware, async (req, res) => {
     return fail(res, 'VALIDATION_ERROR', 'pin must be exactly 4 digits', 400)
   }
 
-  const { data: existingPins, error: pinErr } = await supabase
-    .from('staff')
-    .select('id, pin_hash')
-
-  if (pinErr) throw pinErr
-
-  for (const member of existingPins || []) {
-    if (member.pin_hash && await bcrypt.compare(String(pin), member.pin_hash)) {
-      return fail(res, 'DUPLICATE_PIN', 'PIN already in use', 409)
-    }
-  }
+  // PIN uniqueness check removed to allow shared PINs
 
   const pin_hash = await bcrypt.hash(String(pin), 10)
 
@@ -129,17 +119,7 @@ router.put('/:id', ownerAuthMiddleware, async (req, res) => {
       return fail(res, 'VALIDATION_ERROR', 'pin must be exactly 4 digits', 400)
     }
 
-    const { data: existingPins, error: pinErr } = await supabase
-      .from('staff')
-      .select('id, pin_hash')
-
-    if (pinErr) throw pinErr
-
-    for (const member of existingPins || []) {
-      if (member.id !== id && member.pin_hash && await bcrypt.compare(String(pin), member.pin_hash)) {
-        return fail(res, 'DUPLICATE_PIN', 'PIN already in use', 409)
-      }
-    }
+    // PIN uniqueness check removed to allow shared PINs
   }
 
   const updates = {
