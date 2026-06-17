@@ -18,7 +18,7 @@ const schemaIntent = {
   }
 }
 
-const SYSTEM_PROMPT_INTENT = `You are the intent router for CafeOS, a WhatsApp assistant for Sam, a cafe owner in Goa.
+const SYSTEM_PROMPT_INTENT = `You are the intent router for BistroBot21, a WhatsApp assistant for Sam, a cafe owner in Goa.
 Sam writes in English, Hindi, Konkani, or a mix. Classify her message into exactly ONE intent:
 
 - "summary": asking about today's sales, revenue, or orders ("kitna hua aaj", "how was business")

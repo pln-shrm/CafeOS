@@ -11,8 +11,8 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
-        name: 'CafeOS',
-        short_name: 'CafeOS',
+        name: 'BistroBot21',
+        short_name: 'BistroBot21',
         start_url: '/orders',
         display: 'standalone',
         background_color: '#ffffff',
