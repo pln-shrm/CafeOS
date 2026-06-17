@@ -1,10 +1,10 @@
-# CafeOS (CafeOS)
+# BistroBot21
 
-CafeOS is an intelligent cafe management system built for small to medium-sized cafes. It combines a modern, offline-capable staff point-of-sale (POS) system with a conversational AI assistant (CafeOS) that operates entirely over WhatsApp for the cafe owner.
+BistroBot21 is an intelligent cafe management system built for small to medium-sized cafes. It combines a modern, offline-capable staff point-of-sale (POS) system with a conversational AI assistant (BistroBot21) that operates entirely over WhatsApp for the cafe owner.
 
 ## Architecture Overview
 
-CafeOS is a monorepo consisting of:
+BistroBot21 is a monorepo consisting of:
 1. **Frontend (Staff POS)**: A React-based Progressive Web App (PWA) built with Vite and TailwindCSS. It features full offline capabilities via IndexedDB, allowing staff to queue orders during network outages.
 2. **Backend**: A Node.js/Express server that powers the API, handles Supabase communication, and hosts the AI bot logic.
 3. **Database**: Supabase (PostgreSQL) is used for data storage, authentication, and real-time capabilities.

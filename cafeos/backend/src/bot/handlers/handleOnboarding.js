@@ -2,7 +2,7 @@ const supabase = require('../../services/supabaseClient')
 const { whatsappReply, setBotState } = require('./helpers')
 
 const WELCOME_MESSAGE = [
-  "Hi Sam! 👋 Welcome to CafeOS — your cafe assistant.",
+  "Hi Sam! 👋 Welcome to BistroBot21 — your cafe assistant.",
   '',
   "I'll help you with:",
   '📋 Morning prep suggestions (every day at 8am)',

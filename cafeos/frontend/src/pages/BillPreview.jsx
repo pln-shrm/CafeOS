@@ -50,7 +50,7 @@ export default function BillPreview() {
       navigate(`/staff/order/${order_id}/ebill`, {
         state: {
           bill: {
-            cafe_name: "CafeOS",
+            cafe_name: "BistroBot21",
             cafe_address: 'Vasco da Gama, Goa',
             bill_number,
             date,
@@ -66,7 +66,7 @@ export default function BillPreview() {
               subtotal: i.unit_price * i.quantity 
             })),
             total,
-            footer: "Thank you for visiting CafeOS!"
+            footer: "Thank you for visiting BistroBot21!"
           }
         }
       })
@@ -97,7 +97,7 @@ export default function BillPreview() {
         {/* Receipt block */}
         <div className="bg-white rounded-2xl border border-gray-200 p-5 font-mono text-sm mb-5 shadow-sm">
           <div className="text-center mb-3">
-            <p className="font-bold text-base text-gray-900">CafeOS</p>
+            <p className="font-bold text-base text-gray-900">BistroBot21</p>
             <p className="text-gray-500 text-xs">Vasco da Gama, Goa</p>
           </div>
           <div className="text-xs text-gray-400 text-center mb-1">{date} · {time}</div>

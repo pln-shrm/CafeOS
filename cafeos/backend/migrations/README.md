@@ -1,6 +1,6 @@
-# CafeOS Database Migrations
+# BistroBot21 Database Migrations
 
-This directory contains the SQL migrations required to set up the CafeOS / CafeOS database on Supabase.
+This directory contains the SQL migrations required to set up the BistroBot21 / BistroBot21 database on Supabase.
 
 ## Execution Order
 

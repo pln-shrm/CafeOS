@@ -1,4 +1,4 @@
-# CafeOS API Documentation
+# BistroBot21 API Documentation
 
 ## REST Endpoints
 

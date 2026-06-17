@@ -2,7 +2,7 @@ require('dotenv').config()
 require('express-async-errors')
 
 if (!process.env.JWT_SECRET) throw new Error('JWT_SECRET env var is not set — refusing to start')
-if (!process.env.META_APP_SECRET) console.warn('[CafeOS] META_APP_SECRET not set — webhook signature validation will be skipped')
+if (!process.env.META_APP_SECRET) console.warn('[BistroBot21] META_APP_SECRET not set — webhook signature validation will be skipped')
 
 const express = require('express')
 const cors = require('cors')
@@ -72,5 +72,5 @@ app.use(errorHandler)
 
 const PORT = process.env.PORT || 3000
 app.listen(PORT, () => {
-  logger.info(`[CafeOS] Backend running on port ${PORT} (${process.env.NODE_ENV || 'development'})`)
+  logger.info(`[BistroBot21] Backend running on port ${PORT} (${process.env.NODE_ENV || 'development'})`)
 })

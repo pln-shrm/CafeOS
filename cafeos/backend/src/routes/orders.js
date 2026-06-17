@@ -339,7 +339,7 @@ router.get('/:id/bill', anyAuthMiddleware, async (req, res) => {
   const createdIST = toZonedTime(new Date(order.timestamp), IST)
 
   return ok(res, {
-    cafe_name: "CafeOS",
+    cafe_name: "BistroBot21",
     cafe_address: 'Vasco da Gama, Goa',
     bill_number: order.bill_number,
     date: format(createdIST, 'dd MMM yyyy'),
@@ -355,7 +355,7 @@ router.get('/:id/bill', anyAuthMiddleware, async (req, res) => {
       subtotal: oi.quantity * oi.unit_price
     })),
     total: order.total,
-    footer: "Thank you for visiting CafeOS!"
+    footer: "Thank you for visiting BistroBot21!"
   })
 })
 
