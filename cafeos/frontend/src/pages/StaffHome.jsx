@@ -32,13 +32,14 @@ export default function StaffHome() {
     async function load() {
       const today = todayIST()
       try {
-        const [attRes, summaryRes] = await Promise.all([
+        const [attRes, historyRes] = await Promise.all([
           api.get('/api/attendance', { params: { staff_id: user.id, from: today, to: today } }),
-          api.get('/api/billing/summary', { params: { date: today } })
+          api.get('/api/orders/staff-history')
         ])
         const records = attRes.data.data.records || []
         setAttendance(records.length > 0 ? records[0] : false)
-        setOrderCount(summaryRes.data.data.total_orders || 0)
+        const todayOrders = (historyRes.data.data.orders || []).filter(o => o.bill_date === today)
+        setOrderCount(todayOrders.length)
       } catch {
         setAttendance(false)
       }

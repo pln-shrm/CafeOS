@@ -80,8 +80,14 @@ export default function OrderBuilder() {
   const cartEmpty = cartItems.length === 0
 
   function handleBack() {
-    if (cartEmpty && !customerName && !tableNumber) {
-      navigate('/staff/orders') // changed back dest
+    if (editOrder) {
+      const changed = Object.keys({ ...quantities, ...initialQuantities }).some(
+        id => (quantities[id] || 0) !== (initialQuantities[id] || 0)
+      )
+      if (changed) setShowDiscardModal(true)
+      else navigate('/staff/orders')
+    } else if (cartEmpty && !customerName && !tableNumber) {
+      navigate('/staff/orders')
     } else {
       setShowDiscardModal(true)
     }
@@ -204,7 +210,7 @@ export default function OrderBuilder() {
                     type="text"
                     disabled={!!editOrder}
                     value={tableNumber}
-                    onChange={e => setTableNumber(e.target.value)}
+                    onChange={e => { setTableNumber(e.target.value); setSaveError('') }}
                     placeholder="E.g. T1"
                     className="w-full border border-gray-300 rounded-xl px-3 py-2 outline-none focus:border-gray-900 bg-gray-50 disabled:bg-gray-100"
                   />
@@ -216,7 +222,7 @@ export default function OrderBuilder() {
                   type="text"
                   disabled={!!editOrder}
                   value={customerName}
-                  onChange={e => setCustomerName(e.target.value)}
+                  onChange={e => { setCustomerName(e.target.value); setSaveError('') }}
                   placeholder="Name"
                   className="w-full border border-gray-300 rounded-xl px-3 py-2 outline-none focus:border-gray-900 bg-gray-50 disabled:bg-gray-100"
                 />

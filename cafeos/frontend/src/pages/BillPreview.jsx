@@ -8,11 +8,11 @@ const PAYMENT_METHODS = [
   { key: 'upi', label: 'UPI' }
 ]
 
-function nowIST() {
-  const now = new Date()
+function formatIST(isoTimestamp) {
+  const d = new Date(isoTimestamp)
   return {
-    date: now.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }),
-    time: now.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })
+    date: d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }),
+    time: d.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })
   }
 }
 
@@ -30,7 +30,6 @@ export default function BillPreview() {
   }
 
   const { id, order_type, order_items, total, table_number, customer_name } = orderToClose
-  const { date, time } = nowIST()
 
   const [paymentMethod, setPaymentMethod] = useState('')
   const [confirming, setConfirming] = useState(false)
@@ -45,8 +44,9 @@ export default function BillPreview() {
       const res = await api.patch(`/api/orders/${id}/close`, {
         payment_method: paymentMethod
       })
-      const { id: order_id, bill_number, bill_date } = res.data.data
-      
+      const { id: order_id, bill_number, timestamp } = res.data.data
+      const { date, time } = formatIST(timestamp)
+
       navigate(`/staff/order/${order_id}/ebill`, {
         state: {
           bill: {

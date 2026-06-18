@@ -199,11 +199,19 @@ router.patch('/:id/items', staffAuthMiddleware, async (req, res) => {
     })
   }
 
-  const { error: delErr } = await supabase.from('order_items').delete().eq('order_id', id)
-  if (delErr) throw delErr
+  // Fetch existing item IDs before touching anything
+  const { data: existingItems } = await supabase.from('order_items').select('id').eq('order_id', id)
+  const existingIds = (existingItems || []).map(r => r.id)
 
+  // Insert new items first — if this fails the original items are preserved
   const { error: insErr } = await supabase.from('order_items').insert(orderItemRows)
   if (insErr) throw insErr
+
+  // Delete old items by ID — if this fails we have duplicates, not zero items
+  if (existingIds.length > 0) {
+    const { error: delErr } = await supabase.from('order_items').delete().in('id', existingIds)
+    if (delErr) throw delErr
+  }
 
   const { data: updatedOrder, error: upErr } = await supabase
     .from('orders')
@@ -339,8 +347,8 @@ router.get('/:id/bill', anyAuthMiddleware, async (req, res) => {
   const createdIST = toZonedTime(new Date(order.timestamp), IST)
 
   return ok(res, {
-    cafe_name: "BistroBot21",
-    cafe_address: 'Vasco da Gama, Goa',
+    cafe_name: process.env.CAFE_NAME || 'BistroBot21',
+    cafe_address: process.env.CAFE_ADDRESS || 'Vasco da Gama, Goa',
     bill_number: order.bill_number,
     date: format(createdIST, 'dd MMM yyyy'),
     time: format(createdIST, 'hh:mm a'),

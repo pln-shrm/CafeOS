@@ -56,7 +56,7 @@ export function useAuth() {
             isOwner: true,
             isStaff: false,
             isAuthenticated: true,
-            user: { id: session.user.id, name: session.user.email, role: 'owner' },
+            user: { id: session.user.id, name: session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'Owner', role: 'owner' },
             loading: false
           }))
         } else {
@@ -75,7 +75,7 @@ export function useAuth() {
             isStaff: false,
             isOwner: true,
             isAuthenticated: true,
-            user: { id: session.user.id, name: session.user.email, role: 'owner' },
+            user: { id: session.user.id, name: session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'Owner', role: 'owner' },
             loading: false
           })
         } else {

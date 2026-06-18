@@ -172,6 +172,11 @@ const router = createBrowserRouter([
     path: '*',
     element: <Navigate to="/login" replace />
   }
-])
+], {
+  future: {
+    v7_startTransition: true,
+    v7_relativeSplatPath: true,
+  }
+})
 
 export default router

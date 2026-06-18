@@ -18,13 +18,19 @@ export default function StaffOrders() {
   useEffect(() => {
     async function loadOrders() {
       setLoading(true)
+      setExpandedDates({})
       try {
         if (tab === 'ongoing') {
           const res = await api.get('/api/orders/ongoing')
           setOrders(res.data.data.orders || [])
         } else {
           const res = await api.get('/api/orders/staff-history')
-          setOrders(res.data.data.orders || [])
+          const fetched = res.data.data.orders || []
+          setOrders(fetched)
+          if (fetched.length > 0) {
+            const firstDate = fetched[0].bill_date || fetched[0].timestamp?.split('T')[0]
+            if (firstDate) setExpandedDates({ [firstDate]: true })
+          }
         }
       } catch (err) {
         console.error(err)
@@ -49,11 +55,6 @@ export default function StaffOrders() {
       groups[d].push(order)
     })
     groupedPast = Object.entries(groups).sort(([dateA], [dateB]) => dateB.localeCompare(dateA))
-    
-    // Automatically expand the first (latest) date if none are explicitly set
-    if (groupedPast.length > 0 && Object.keys(expandedDates).length === 0) {
-      setExpandedDates({ [groupedPast[0][0]]: true })
-    }
   }
 
   return (

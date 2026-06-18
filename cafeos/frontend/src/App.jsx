@@ -22,12 +22,11 @@ async function triggerSync() {
     const res = await api.post('/api/orders/sync', { orders })
     const { synced } = res.data.data
 
-    if (synced > 0) {
-      for (const order of pending) {
-        await markOrderSynced(order.localUuid)
-      }
-      window.dispatchEvent(new Event('cafeos:orders-synced'))
+    const erroredUuids = new Set((res.data.data.errors || []).map(e => e.local_uuid))
+    for (const order of pending) {
+      if (!erroredUuids.has(order.localUuid)) await markOrderSynced(order.localUuid)
     }
+    if (synced > 0) window.dispatchEvent(new Event('cafeos:orders-synced'))
   } catch {
     // Sync will retry on next online event
   }
@@ -42,5 +41,5 @@ export default function App() {
     return () => window.removeEventListener('online', triggerSync)
   }, [])
 
-  return <RouterProvider router={router} />
+  return <RouterProvider router={router} future={{ v7_startTransition: true }} />
 }

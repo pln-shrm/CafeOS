@@ -4,12 +4,17 @@ import api from '../lib/api'
 
 function formatBillText(bill) {
   const divider = '─'.repeat(32)
+  const customerLine = [
+    bill.table_number ? `Table ${bill.table_number}` : '',
+    bill.customer_name || ''
+  ].filter(Boolean).join(' — ')
   const lines = [
     bill.cafe_name,
     bill.cafe_address,
     divider,
-    `${bill.date}  ${bill.time}`,
+    `${bill.date}  ${bill.time}${bill.bill_number ? `  Bill #${bill.bill_number}` : ''}`,
     `${bill.order_type === 'dine_in' ? 'Dine In' : 'Takeaway'} | ${bill.payment_method?.toUpperCase()}`,
+    ...(customerLine ? [customerLine] : []),
     divider,
     ...bill.items.map(i => `${i.name} x${i.quantity}  ₹${i.subtotal}`),
     divider,
@@ -95,11 +100,21 @@ export default function EBill() {
         <div className="border-t border-dashed border-gray-300 pt-3 mb-3">
           <div className="flex justify-between text-xs text-gray-500 mb-1">
             <span>{bill.date}</span>
+            {bill.bill_number && (
+              <span className="font-semibold text-gray-700">Bill #{bill.bill_number}</span>
+            )}
           </div>
           <div className="flex justify-between text-xs text-gray-500">
-            <span className="capitalize">{bill.order_type === 'dine_in' ? 'Dine In' : 'Takeaway'}</span>
+            <span>{bill.order_type === 'dine_in' ? 'Dine In' : 'Takeaway'}</span>
             <span>{bill.time}</span>
           </div>
+          {(bill.table_number || bill.customer_name) && (
+            <div className="text-xs text-gray-600 mt-1 font-medium">
+              {bill.table_number ? `Table ${bill.table_number}` : ''}
+              {bill.table_number && bill.customer_name ? ' — ' : ''}
+              {bill.customer_name}
+            </div>
+          )}
           {bill.payment_method && (
             <div className="text-xs text-gray-400 mt-1 capitalize">
               Payment: {bill.payment_method}

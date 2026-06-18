@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../lib/api'
+import { useAuth } from '../hooks/useAuth'
 
 const IST = 'Asia/Kolkata'
 const CACHE_KEY = 'cafeos_owner_summary_cache'
@@ -19,11 +20,12 @@ function formatDateIST() {
   })
 }
 
-function greetingForNow() {
+function greetingForNow(name) {
   const hour = Number(new Date().toLocaleString('en-US', { timeZone: IST, hour: '2-digit', hour12: false }))
-  if (hour < 12) return 'Good morning, Sam ☀️'
-  if (hour < 17) return 'Good afternoon, Sam'
-  return 'Good evening, Sam 🌙'
+  const display = name ? `, ${name}` : ''
+  if (hour < 12) return `Good morning${display} ☀️`
+  if (hour < 17) return `Good afternoon${display}`
+  return `Good evening${display} 🌙`
 }
 
 function formatCurrency(value) {
@@ -38,6 +40,7 @@ function formatCount(value) {
 
 export default function OwnerHome() {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const [summary, setSummary] = useState(null)
   const [topItems, setTopItems] = useState([])
   const [dineInCount, setDineInCount] = useState(null)
@@ -138,7 +141,7 @@ export default function OwnerHome() {
   return (
     <div className="flex flex-col flex-1 px-5 pt-6 pb-8 gap-5">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">{greetingForNow()}</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{greetingForNow(user?.name)}</h1>
         <p className="text-gray-500 text-sm mt-1">{formatDateIST()}</p>
       </div>
 

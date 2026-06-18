@@ -109,8 +109,8 @@ export default function LoginPage() {
     <div className="min-h-screen bg-white flex flex-col items-center justify-center px-6 py-10">
       {/* App header */}
       <div className="text-center mb-8">
-        <h1 className="text-4xl font-bold text-gray-900">BistroBot21</h1>
-        <p className="text-gray-500 mt-1">Sam's Cafe, Vasco</p>
+        <h1 className="text-4xl font-bold text-gray-900">{import.meta.env.VITE_CAFE_NAME || 'BistroBot21'}</h1>
+        <p className="text-gray-500 mt-1">{import.meta.env.VITE_CAFE_SUBTITLE || ''}</p>
       </div>
 
       {/* Login card container */}
