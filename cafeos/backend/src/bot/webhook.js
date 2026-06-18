@@ -36,6 +36,7 @@ const handleOrderVendorNameReply = require('./handlers/handleOrderVendorNameRepl
 const handleOrderItemsInteractiveReply = require('./handlers/handleOrderItemsInteractiveReply')
 const { handleWhatElseReply } = require('./handlers/handleWhatElseReply')
 const { whatsappButtons } = require('./handlers/helpers')
+const handlePlatformOrder = require('./handlers/handlePlatformOrder')
 
 const router = Router()
 
@@ -68,7 +69,7 @@ async function executeAndLogHandler(handlerName, handlerFn, phoneNumber, ...args
 }
 
 
-async function routeMessage({ phoneNumber, message, isVoiceNote, mediaUrl }) {
+async function routeMessage({ phoneNumber, message, isVoiceNote, mediaUrl, imageData }) {
   const trimmed = message.trim()
   const lowered = trimmed.toLowerCase()
 
@@ -90,6 +91,12 @@ async function routeMessage({ phoneNumber, message, isVoiceNote, mediaUrl }) {
       ])
       return
     }
+  }
+
+  // Platform orders (image screenshot or swiggy/zomato keyword) only when idle
+  if (stateRow.current_state === 'idle' && (imageData || lowered.startsWith('swiggy') || lowered.startsWith('zomato'))) {
+    await executeAndLogHandler('handlePlatformOrder', handlePlatformOrder, phoneNumber, trimmed, imageData)
+    return
   }
 
   switch (stateRow.current_state) {
@@ -247,6 +254,9 @@ router.post('/', async (req, res) => {
     const Body = interactiveReply?.id || messageInfo.text?.body || ''
     const isAudio = messageInfo.type === 'audio'
     const audioMediaId = isAudio ? messageInfo.audio?.id : null
+    const isImage = messageInfo.type === 'image'
+    const imageMediaId = isImage ? messageInfo.image?.id : null
+    const imageMimeType = isImage ? (messageInfo.image?.mime_type || 'image/jpeg') : null
 
     // Atomic dedupe: insert and let the unique constraint reject retries.
     // Avoids the select-then-insert race when Meta delivers the same message twice concurrently.
@@ -284,11 +294,35 @@ router.post('/', async (req, res) => {
         }
       }
 
+      let imageData = null
+      if (isImage && imageMediaId) {
+        try {
+          const mediaRes = await axios.get(
+            `https://graph.facebook.com/v17.0/${imageMediaId}`,
+            { headers: { Authorization: `Bearer ${process.env.META_ACCESS_TOKEN}` } }
+          )
+          const imageUrl = mediaRes.data?.url
+          if (imageUrl) {
+            const imgRes = await axios.get(imageUrl, {
+              headers: { Authorization: `Bearer ${process.env.META_ACCESS_TOKEN}` },
+              responseType: 'arraybuffer'
+            })
+            imageData = {
+              base64: Buffer.from(imgRes.data).toString('base64'),
+              mimeType: imageMimeType
+            }
+          }
+        } catch (err) {
+          console.warn('[Webhook] Failed to resolve image media', err.message)
+        }
+      }
+
       routeMessage({
         phoneNumber: From,
         message: Body,
         isVoiceNote: isAudio,
-        mediaUrl
+        mediaUrl,
+        imageData
       }).catch(err => {
         console.error('[Webhook] Async processing failed:', err.response?.data ? JSON.stringify(err.response.data, null, 2) : err.message)
       })

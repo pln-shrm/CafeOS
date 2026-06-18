@@ -5,11 +5,12 @@ const { format } = require('date-fns')
 const supabase = require('../services/supabaseClient')
 const { staffAuthMiddleware, anyAuthMiddleware, ownerAuthMiddleware } = require('../middleware/auth')
 const { ok, fail } = require('../utils/response')
+const { fetchActiveOffers, applyBestOffer } = require('./offers')
 
 const router = Router()
 const IST = 'Asia/Kolkata'
 
-const VALID_ORDER_TYPES = ['dine_in', 'takeaway']
+const VALID_ORDER_TYPES = ['dine_in', 'takeaway', 'swiggy', 'zomato']
 const VALID_PAYMENT_METHODS = ['cash', 'upi', 'pending']
 
 function todayIST() {
@@ -72,7 +73,7 @@ async function createOrderFromBody(body, staffId) {
   const menuIds = items.map(i => i.menu_item_id)
   const { data: menuItems, error: menuErr } = await supabase
     .from('menu_items')
-    .select('id, name, price')
+    .select('id, name, price, category')
     .in('id', menuIds)
     .eq('active', true)
 
@@ -84,7 +85,14 @@ async function createOrderFromBody(body, staffId) {
   }
 
   const billDate = todayIST()
-  const total = items.reduce((sum, item) => sum + menuMap[item.menu_item_id].price * Number(item.quantity), 0)
+  const activeOffers = await fetchActiveOffers(billDate)
+  const discountMap = Object.fromEntries(
+    menuItems.map(m => [m.id, applyBestOffer(m, activeOffers)])
+  )
+  const total = items.reduce((sum, item) => {
+    const price = menuMap[item.menu_item_id].price - (discountMap[item.menu_item_id] || 0)
+    return sum + price * Number(item.quantity)
+  }, 0)
 
   let order, orderErr
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -125,7 +133,8 @@ async function createOrderFromBody(body, staffId) {
     order_id: order.id,
     menu_item_id: item.menu_item_id,
     quantity: Number(item.quantity),
-    unit_price: menuMap[item.menu_item_id].price
+    unit_price: menuMap[item.menu_item_id].price,
+    discount_amount: discountMap[item.menu_item_id] || 0
   }))
 
   const { data: orderItems, error: itemsErr } = await supabase
@@ -176,7 +185,7 @@ router.patch('/:id/items', staffAuthMiddleware, async (req, res) => {
   const menuIds = items.map(i => i.menu_item_id)
   const { data: menuItems, error: menuErr } = await supabase
     .from('menu_items')
-    .select('id, name, price')
+    .select('id, name, price, category')
     .in('id', menuIds)
     .eq('active', true)
 
@@ -195,7 +204,8 @@ router.patch('/:id/items', staffAuthMiddleware, async (req, res) => {
       order_id: id,
       menu_item_id: item.menu_item_id,
       quantity: qty,
-      unit_price: menuMap[item.menu_item_id].price
+      unit_price: menuMap[item.menu_item_id].price,
+      discount_amount: 0
     })
   }
 
