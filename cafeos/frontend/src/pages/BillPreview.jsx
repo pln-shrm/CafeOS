@@ -16,6 +16,10 @@ function formatIST(isoTimestamp) {
   }
 }
 
+function nowIST() {
+  return formatIST(new Date().toISOString())
+}
+
 export default function BillPreview() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -30,6 +34,7 @@ export default function BillPreview() {
   }
 
   const { id, order_type, order_items, total, table_number, customer_name } = orderToClose
+  const { date, time } = nowIST()
 
   const [paymentMethod, setPaymentMethod] = useState('')
   const [confirming, setConfirming] = useState(false)
