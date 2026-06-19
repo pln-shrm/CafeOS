@@ -34,8 +34,12 @@ async function ownerAuthMiddleware(req, res, next) {
   let isAuthorized = envEmails.includes(user.email)
   
   if (!isAuthorized) {
-    const { data } = await supabase.from('authorized_owners').select('email').eq('email', user.email).single()
-    if (data) isAuthorized = true
+    const { data, error } = await supabase.from('authorized_owners').select('email').ilike('email', user.email).single()
+    if (data) {
+      isAuthorized = true
+    } else {
+      return fail(res, 'FORBIDDEN', `Access denied for ${user.email}. DB Error: ${error?.message || 'No record found'}`, 403)
+    }
   }
 
   if (!isAuthorized) return fail(res, 'FORBIDDEN', 'Owner access required', 403)
@@ -71,8 +75,12 @@ async function anyAuthMiddleware(req, res, next) {
   let isAuthorized = envEmails.includes(user.email)
   
   if (!isAuthorized) {
-    const { data } = await supabase.from('authorized_owners').select('email').eq('email', user.email).single()
-    if (data) isAuthorized = true
+    const { data, error } = await supabase.from('authorized_owners').select('email').ilike('email', user.email).single()
+    if (data) {
+      isAuthorized = true
+    } else {
+      return fail(res, 'FORBIDDEN', `Access denied for ${user.email}. DB Error: ${error?.message || 'No record found'}`, 403)
+    }
   }
 
   if (!isAuthorized) return fail(res, 'FORBIDDEN', 'Access denied', 403)
