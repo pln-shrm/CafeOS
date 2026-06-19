@@ -22,6 +22,7 @@ export default function LoginPage() {
   const [ownerPassword, setOwnerPassword] = useState('')
   const [ownerError, setOwnerError] = useState('')
   const [ownerLoading, setOwnerLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true)
@@ -224,15 +225,22 @@ export default function LoginPage() {
                   required
                 />
               </div>
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-1 relative">
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   placeholder="Password"
                   value={ownerPassword}
                   onChange={e => setOwnerPassword(e.target.value)}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3.5 text-sm outline-none focus:border-gray-600 transition-colors"
+                  className="w-full border border-gray-300 rounded-xl px-4 py-3.5 pr-12 text-sm outline-none focus:border-gray-600 transition-colors"
                   required
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none text-sm font-medium"
+                >
+                  {showPassword ? 'Hide' : 'Show'}
+                </button>
               </div>
 
               {ownerError && (

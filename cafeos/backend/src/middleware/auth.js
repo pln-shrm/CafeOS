@@ -29,7 +29,16 @@ async function ownerAuthMiddleware(req, res, next) {
 
   const { data: { user }, error } = await supabase.auth.getUser(token)
   if (error || !user) return fail(res, 'INVALID_TOKEN', 'Invalid or expired token', 403)
-  if (user.email !== process.env.OWNER_EMAIL) return fail(res, 'FORBIDDEN', 'Owner access required', 403)
+  
+  const envEmails = (process.env.OWNER_EMAILS || process.env.OWNER_EMAIL || '').split(',').map(e => e.trim())
+  let isAuthorized = envEmails.includes(user.email)
+  
+  if (!isAuthorized) {
+    const { data } = await supabase.from('authorized_owners').select('email').eq('email', user.email).single()
+    if (data) isAuthorized = true
+  }
+
+  if (!isAuthorized) return fail(res, 'FORBIDDEN', 'Owner access required', 403)
 
   req.owner = user
   req.role = 'owner'
@@ -57,7 +66,16 @@ async function anyAuthMiddleware(req, res, next) {
   // Try Supabase owner auth
   const { data: { user }, error } = await supabase.auth.getUser(token)
   if (error || !user) return fail(res, 'INVALID_TOKEN', 'Invalid or expired token', 403)
-  if (user.email !== process.env.OWNER_EMAIL) return fail(res, 'FORBIDDEN', 'Access denied', 403)
+  
+  const envEmails = (process.env.OWNER_EMAILS || process.env.OWNER_EMAIL || '').split(',').map(e => e.trim())
+  let isAuthorized = envEmails.includes(user.email)
+  
+  if (!isAuthorized) {
+    const { data } = await supabase.from('authorized_owners').select('email').eq('email', user.email).single()
+    if (data) isAuthorized = true
+  }
+
+  if (!isAuthorized) return fail(res, 'FORBIDDEN', 'Access denied', 403)
 
   req.owner = user
   req.role = 'owner'
