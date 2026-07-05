@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { getPendingOrders } from '../lib/db'
+import api from '../lib/api'
 
 export default function Layout({ children }) {
   const { user, logout } = useAuth()
@@ -10,6 +11,9 @@ export default function Layout({ children }) {
   const [pendingCount, setPendingCount] = useState(0)
 
   useEffect(() => {
+    // Track usage for today
+    api.post('/api/analytics/track').catch(() => {})
+
     async function refreshPending() {
       try {
         const pending = await getPendingOrders()

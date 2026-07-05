@@ -7,6 +7,7 @@ const {
   getBotState,
   setBotState
 } = require('./handlers/helpers')
+const { trackUsage } = require('../services/analyticsService')
 const handleOnboarding = require('./handlers/handleOnboarding')
 const handleRecoveryReply = require('./handlers/handleRecoveryReply')
 const handlePrepConfirmReply = require('./handlers/handlePrepConfirmReply')
@@ -78,6 +79,16 @@ async function routeMessage({ phoneNumber, message, isVoiceNote, mediaUrl, image
     await handleOnboarding(phoneNumber)
     return
   }
+
+  const tzOptions = { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }
+  const parts = new Intl.DateTimeFormat('en-CA', tzOptions).formatToParts(new Date())
+  const year = parts.find(p => p.type === 'year').value
+  const month = parts.find(p => p.type === 'month').value
+  const day = parts.find(p => p.type === 'day').value
+  const dateStr = `${year}-${month}-${day}`
+  
+  // Fire and forget tracking
+  trackUsage('bot', phoneNumber, dateStr).catch(() => {})
 
   if (stateRow.updated_at && stateRow.current_state !== 'idle') {
     const updatedAt = new Date(stateRow.updated_at)

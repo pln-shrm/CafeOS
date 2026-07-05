@@ -230,6 +230,10 @@ export default function OwnerHome() {
           <p className="text-lg">Offers 🏷️</p>
           <p className="text-xs text-gray-500 mt-1">Discounts</p>
         </button>
+        <button onClick={() => navigate('/owner/analytics')} className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm text-left">
+          <p className="text-lg">Analytics 📈</p>
+          <p className="text-xs text-gray-500 mt-1">App usage</p>
+        </button>
       </div>
     </div>
   )

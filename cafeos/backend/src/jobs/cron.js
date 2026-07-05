@@ -379,8 +379,8 @@ ${accuracyLine}`
   await whatsappReply(process.env.SAM_WHATSAPP_TO, messageText)
 }
 
-// 8:00 AM Tue–Sun
-cron.schedule('0 8 * * 2-7', () => {
+// 7:00 AM Tue–Sun
+cron.schedule('0 7 * * 2-7', () => {
   console.log(`[CRON] MORNING_PREP_SHEET fired at ${new Date().toISOString()}`)
   runMorningPrepJob().catch(err => console.error('[CRON] MORNING_PREP_SHEET failed', err))
 }, IST)

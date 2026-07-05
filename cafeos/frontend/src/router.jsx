@@ -18,6 +18,7 @@ import AttendanceLog from './pages/owner/AttendanceLog'
 import Inventory from './pages/owner/Inventory'
 import VendorCredit from './pages/owner/VendorCredit'
 import Offers from './pages/owner/Offers'
+import Analytics from './pages/owner/Analytics'
 
 function ProtectedRoute({ children, requireOwner = false }) {
   const { isAuthenticated, isStaff, isOwner, loading } = useAuth()
@@ -174,6 +175,14 @@ const router = createBrowserRouter([
     element: (
       <ProtectedRoute requireOwner>
         <Offers />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/owner/analytics',
+    element: (
+      <ProtectedRoute requireOwner>
+        <Analytics />
       </ProtectedRoute>
     )
   },
