@@ -97,4 +97,77 @@ router.get('/summary', ownerAuthMiddleware, async (req, res) => {
   return ok(res, summary)
 })
 
+// GET /api/analytics/business
+// Fetches detailed business analytics (Revenue, Orders, Expenses, Top Items)
+router.get('/business', ownerAuthMiddleware, async (req, res) => {
+  const thirtyDaysAgo = new Date()
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+  const fromTimestamp = thirtyDaysAgo.toISOString()
+
+  try {
+    // 1. Get Completed Orders in last 30 days
+    const { data: orders, error: ordersErr } = await supabase
+      .from('orders')
+      .select('id, total')
+      .eq('status', 'completed')
+      .gte('timestamp', fromTimestamp)
+
+    if (ordersErr) throw ordersErr
+
+    const totalOrders = orders.length
+    const totalRevenue = orders.reduce((sum, o) => sum + (Number(o.total) || 0), 0)
+    const orderIds = orders.map(o => o.id)
+
+    // 2. Get Top Selling Items
+    let topItems = []
+    if (orderIds.length > 0) {
+      // Chunk orderIds if there are too many (Supabase URL limit), but for 100-200 it's fine.
+      // Alternatively, we can just fetch all order_items joined with menu_items and filter in memory
+      // to avoid URL length issues entirely.
+      const { data: allOrderItems, error: oiErr } = await supabase
+        .from('order_items')
+        .select('order_id, quantity, menu_items ( name )')
+      
+      if (oiErr) throw oiErr
+
+      const recentOrderItems = allOrderItems.filter(oi => orderIds.includes(oi.order_id))
+
+      const itemCounts = {}
+      for (const oi of recentOrderItems) {
+        const name = oi.menu_items?.name || 'Unknown Item'
+        const qty = Number(oi.quantity) || 1
+        itemCounts[name] = (itemCounts[name] || 0) + qty
+      }
+
+      topItems = Object.entries(itemCounts)
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 5) // Top 5
+    }
+
+    // 3. Get Procurement Expenses in last 30 days
+    const { data: procurements, error: procErr } = await supabase
+      .from('procurement')
+      .select('total_cost')
+      .gte('timestamp', fromTimestamp)
+      // Exclude cancelled? Let's just sum everything that has a total_cost
+      .neq('status', 'cancelled')
+
+    if (procErr) throw procErr
+
+    const totalExpenses = procurements.reduce((sum, p) => sum + (Number(p.total_cost) || 0), 0)
+
+    return ok(res, {
+      totalRevenue: Math.round(totalRevenue),
+      totalOrders,
+      totalExpenses: Math.round(totalExpenses),
+      profit: Math.round(totalRevenue - totalExpenses),
+      topItems
+    })
+  } catch (error) {
+    console.error('Business Analytics Error:', error)
+    return fail(res, 'DB_ERROR', error.message, 500)
+  }
+})
+
 module.exports = router
