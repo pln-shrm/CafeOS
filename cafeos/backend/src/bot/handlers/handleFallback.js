@@ -33,6 +33,24 @@ Sam writes in English, Hindi, Konkani, or a mix. Classify her message into exact
 Set "vendor_name" only for "balance"; otherwise null. When in doubt, use "unknown" — never guess.`
 
 async function handleFallback(phoneNumber, message = '') {
+  const lowered = message.trim().toLowerCase()
+  if (
+    lowered === '1' ||
+    lowered === '2' ||
+    lowered === '3' ||
+    lowered === '4' ||
+    lowered.includes('make changes') ||
+    lowered.includes('go with') ||
+    lowered.includes('looks right') ||
+    lowered.includes('correct it') ||
+    lowered.includes('staff meals') ||
+    lowered.includes('unrecorded wastage') ||
+    lowered === 'ignore'
+  ) {
+    await whatsappReply(phoneNumber, "It looks like you tapped a button from an old message. This task is already complete/locked ✓\n\nIf you need to change today's data, please use the CafeOS web dashboard.")
+    return
+  }
+
   if (message.trim()) {
     const parsed = await callGeminiJSON(
       SYSTEM_PROMPT_INTENT,

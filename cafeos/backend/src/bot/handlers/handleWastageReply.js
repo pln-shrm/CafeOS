@@ -19,6 +19,7 @@ const schemaG = {
       }
     },
     all_clear: { type: "boolean" },
+    all_left: { type: "boolean" },
     unclear: { type: "boolean" }
   }
 };
@@ -34,8 +35,9 @@ Rules:
 - "qty_left": integer number of portions or units remaining.
 - Treat "nil", "zero", "nahi", "khatam", "sold out" as 0.
 - Treat "fine", "ok", "thoda", "negligible", "bahut kam" as 0 — negligible remainder.
-- "all_clear": set to true if Sam implies EVERYTHING sold (e.g. "sab bik gaya", "nothing left", "all clear", "sab khatam", "zero wastage"). When true, set items to [].
-- "unclear": set to true only if the message is completely unintelligible and no items/quantities can be extracted at all.
+- "all_clear": set to true if Sam implies EVERYTHING sold (e.g. "sab bik gaya", "nothing left", "all clear", "sab khatam", "zero wastage", "everything sold", "all sold"). When true, set items to [].
+- "all_left": set to true if Sam implies EVERYTHING is left over (e.g. "everything is left", "all is left", "nothing sold", "everything").
+- "unclear": set to true if the message is completely unintelligible.
 - Never invent items Sam did not mention.
 - Sam does not need to mention every item — only report what she explicitly stated.`
 
@@ -162,7 +164,28 @@ Sam's wastage message: "${message}"`
   }
 
   // Write wastage_logs — only items Sam mentioned (not all items)
-  if (parsed.all_clear) {
+  if (parsed.all_left) {
+    const { data: predictions } = await supabase
+      .from('predictions')
+      .select('menu_item_id, owner_override, predicted_qty')
+      .eq('date', today)
+    
+    const wastageRows = (predictions || []).map(p => {
+      const matchedItem = (menuItems || []).find(m => m.id === p.menu_item_id)
+      return {
+        menu_item_id: p.menu_item_id,
+        item_name: matchedItem ? matchedItem.name : 'Item',
+        quantity_left: p.owner_override ?? p.predicted_qty,
+        logged_at: today
+      }
+    })
+    
+    if (wastageRows.length > 0) {
+      await supabase
+        .from('wastage_logs')
+        .upsert(wastageRows, { onConflict: 'menu_item_id,logged_at' })
+    }
+  } else if (parsed.all_clear) {
     // Everything sold — upsert 0 for all menu items
     const wastageRows = (menuItems || []).map(item => ({
       menu_item_id: item.id,
@@ -195,7 +218,15 @@ Sam's wastage message: "${message}"`
 
   // Detect anomalies before predicting
   const wastageMap = new Map()
-  if (parsed.all_clear) {
+  if (parsed.all_left) {
+    const { data: predictions } = await supabase
+      .from('predictions')
+      .select('menu_item_id, owner_override, predicted_qty')
+      .eq('date', today)
+    for (const p of (predictions || [])) {
+      wastageMap.set(p.menu_item_id, p.owner_override ?? p.predicted_qty)
+    }
+  } else if (parsed.all_clear) {
     for (const item of menuItems || []) wastageMap.set(item.id, 0)
   } else {
     for (const entry of parsed.items || []) {

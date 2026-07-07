@@ -24,7 +24,7 @@ async function handleVendorConfirmReply(phoneNumber, message, context) {
   const text = message.trim().toLowerCase()
   const vendorName = context?.vendor_name
 
-  if (['1', 'ok', 'haan', 'yes'].includes(text)) {
+  if (['1', 'ok', 'haan', 'yes'].includes(text) || text.includes('confirm')) {
     // Send exactly what Sam confirmed — only generate fresh if context lost it
     const formattedMessage = context?.formatted_message
       || await buildForwardableMessage(context?.items, vendorName)
@@ -74,7 +74,7 @@ async function handleVendorConfirmReply(phoneNumber, message, context) {
     return
   }
 
-  if (text === '2') {
+  if (text === '2' || text.includes('edit')) {
     await setBotState(phoneNumber, 'awaiting_vendor_edit', context || null)
     await whatsappReply(phoneNumber, "What changes? (e.g. 'rice 6kg, skip oil')")
     return

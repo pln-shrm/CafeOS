@@ -5,7 +5,7 @@ const { applyPrepEdits } = require('./handlePrepEditReply')
 async function handlePrepConfirmReply(phoneNumber, message) {
   const text = message.trim().toLowerCase()
 
-  if (['1', 'ok', 'haan', 'yes'].includes(text)) {
+  if (['1', 'ok', 'haan', 'yes'].includes(text) || text.includes('go with')) {
     const today = todayIST()
     await supabase
       .from('predictions')
@@ -17,7 +17,7 @@ async function handlePrepConfirmReply(phoneNumber, message) {
     return
   }
 
-  if (text === '2') {
+  if (text === '2' || text.includes('make changes')) {
     await setBotState(phoneNumber, 'awaiting_prep_edit', null)
     await whatsappReply(phoneNumber, "What would you like to change? (e.g. 'biryani 25, fish curry 10')")
     return

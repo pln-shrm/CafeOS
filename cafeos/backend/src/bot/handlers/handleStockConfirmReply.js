@@ -39,13 +39,13 @@ async function handleStockConfirmReply(phoneNumber, message, context) {
 
   // Estimates are already in inventory_levels (the deduction step wrote them) —
   // confirming just moves on to the vendor order draft.
-  if (['1', 'ok', 'haan', 'yes', 'y', 'sahi', 'right', 'correct'].includes(text)) {
+  if (['1', 'ok', 'haan', 'yes', 'y', 'sahi', 'right', 'correct'].includes(text) || text.includes('looks right')) {
     await proceedToVendorOrder(phoneNumber, 'Stock confirmed ✓')
     return
   }
 
   // "Correct it" button — stay in this state and ask for the corrections
-  if (text === '2') {
+  if (text === '2' || text.includes('correct it')) {
     await whatsappReply(
       phoneNumber,
       "Tell me what's different (e.g. 'rice 3, oil 0.5, milk zero')"
